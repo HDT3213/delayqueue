@@ -71,7 +71,7 @@ func TestDelayQueue_StopConsume(t *testing.T) {
 			queue.StopConsume()
 		}
 		return true
-	})
+	}).WithDefaultRetryCount(1)
 	for i := 0; i < size; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), 0)
 		if err != nil {
@@ -101,8 +101,4 @@ func TestIDOverflow(t *testing.T) {
 			return
 		}
 	}
-}
-
-func TestDelayQUeu(t *testing.T) {
-
 }

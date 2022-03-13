@@ -1,5 +1,11 @@
 # DelayQueue
 
+![license](https://img.shields.io/github/license/HDT3213/delayqueue)
+[![Build Status](https://travis-ci.com/HDT3213/delayqueue.svg?branch=master)](https://app.travis-ci.com/github/HDT3213/delayqueue)
+[![Coverage Status](https://coveralls.io/repos/github/HDT3213/delayqueue/badge.svg?branch=master)](https://coveralls.io/github/HDT3213/delayqueue?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/HDT3213/delayqueue)](https://goreportcard.com/report/github.com/HDT3213/delayqueue)
+[![Go Reference](https://pkg.go.dev/badge/github.com/hdt3213/delayqueue.svg)](https://pkg.go.dev/github.com/hdt3213/delayqueue)
+
 DelayQueue is a message queue supporting delayed/scheduled delivery based on redis.
 
 DelayQueue guarantees to deliver at least once.
@@ -76,3 +82,12 @@ WithFetchLimit(limit uint)
 ```
 
 WithFetchLimit limits the max number of messages at one time
+
+
+```
+WithDefaultRetryCount(count uint)
+```
+
+WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue
+
+use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message

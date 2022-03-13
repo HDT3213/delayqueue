@@ -29,7 +29,7 @@ type DelayQueue struct {
 
 	maxConsumeDuration time.Duration
 	msgTTL             time.Duration
-	defaultRetryCount  int
+	defaultRetryCount  uint
 	fetchInterval      time.Duration
 	fetchLimit         uint
 }
@@ -92,6 +92,13 @@ func (q *DelayQueue) WithFetchLimit(limit uint) *DelayQueue {
 	return q
 }
 
+// WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue
+// use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
+func (q *DelayQueue) WithDefaultRetryCount(count uint) *DelayQueue {
+	q.defaultRetryCount = count
+	return q
+}
+
 func (q *DelayQueue) genMsgKey(idStr string) string {
 	return "dp:" + q.name + ":msg:" + idStr
 }
@@ -127,7 +134,7 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 	for _, opt := range opts {
 		switch o := opt.(type) {
 		case retryCountOpt:
-			retryCount = int(o)
+			retryCount = uint(o)
 		}
 	}
 	// generate id
