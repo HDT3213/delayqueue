@@ -68,6 +68,7 @@ func TestDelayQueue_StopConsume(t *testing.T) {
 		received++
 		if received == size {
 			queue.StopConsume()
+			t.Log("send stop signal")
 		}
 		return true
 	}).WithDefaultRetryCount(1)
