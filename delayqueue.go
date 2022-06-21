@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"log"
 	"math"
-	"strconv"
 	"time"
 )
 
@@ -22,7 +22,6 @@ type DelayQueue struct {
 	retryKey      string // list
 	retryCountKey string // hash: message id -> remain retry count
 	garbageKey    string // set: message id
-	idGenKey      string // id generator
 	ticker        *time.Ticker
 	logger        *log.Logger
 	close         chan struct{}
@@ -56,7 +55,6 @@ func NewQueue(name string, cli *redis.Client, callback func(string) bool) *Delay
 		retryKey:           "dp:" + name + ":retry",
 		retryCountKey:      "dp:" + name + ":retry:cnt",
 		garbageKey:         "dp:" + name + ":garbage",
-		idGenKey:           "dp:" + name + ":id_gen",
 		close:              make(chan struct{}, 1),
 		maxConsumeDuration: 5 * time.Second,
 		msgTTL:             time.Hour,
@@ -103,22 +101,6 @@ func (q *DelayQueue) genMsgKey(idStr string) string {
 	return "dp:" + q.name + ":msg:" + idStr
 }
 
-func (q *DelayQueue) genId() (uint32, error) {
-	ctx := context.Background()
-	id, err := q.redisCli.Incr(ctx, q.idGenKey).Result()
-	if err != nil && err.Error() == "ERR increment or decrement would overflow" {
-		err = q.redisCli.Set(ctx, q.idGenKey, 1, 0).Err()
-		if err != nil {
-			return 0, fmt.Errorf("reset id gen failed: %v", err)
-		}
-		return 1, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("incr id gen failed: %v", err)
-	}
-	return uint32(id), nil
-}
-
 type retryCountOpt int
 
 // WithRetryCount set retry count for a msg
@@ -138,16 +120,12 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 		}
 	}
 	// generate id
-	id, err := q.genId()
-	if err != nil {
-		return err
-	}
-	idStr := strconv.FormatUint(uint64(id), 10)
+	idStr := uuid.Must(uuid.NewRandom()).String()
 	ctx := context.Background()
 	now := time.Now()
 	// store msg
 	msgTTL := t.Sub(now) + q.msgTTL // delivery + q.msgTTL
-	err = q.redisCli.Set(ctx, q.genMsgKey(idStr), payload, msgTTL).Err()
+	err := q.redisCli.Set(ctx, q.genMsgKey(idStr), payload, msgTTL).Err()
 	if err != nil {
 		return fmt.Errorf("store msg failed: %v", err)
 	}
@@ -157,7 +135,7 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 		return fmt.Errorf("store retry count failed: %v", err)
 	}
 	// put to pending
-	err = q.redisCli.ZAdd(ctx, q.pendingKey, &redis.Z{Score: float64(t.Unix()), Member: id}).Err()
+	err = q.redisCli.ZAdd(ctx, q.pendingKey, &redis.Z{Score: float64(t.Unix()), Member: idStr}).Err()
 	if err != nil {
 		return fmt.Errorf("push to pending failed: %v", err)
 	}
@@ -264,6 +242,19 @@ func (q *DelayQueue) ack(idStr string) error {
 	return nil
 }
 
+func (q *DelayQueue) nack(idStr string) error {
+	ctx := context.Background()
+	// update retry time as now, unack2Retry will move it to retry immediately
+	err := q.redisCli.ZAdd(ctx, q.unAckKey, &redis.Z{
+		Member: idStr,
+		Score:  float64(time.Now().Unix()),
+	}).Err()
+	if err != nil {
+		return fmt.Errorf("negative ack failed: %v", err)
+	}
+	return nil
+}
+
 // unack2RetryScript atomically moves messages from unack to retry which remaining retry count greater than 0,
 // and moves messages from unack to garbage which  retry count is 0
 // Because DelayQueue cannot determine garbage message before eval unack2RetryScript, so it cannot pass keys parameter to redisCli.Eval
@@ -324,7 +315,7 @@ func (q *DelayQueue) garbageCollect() error {
 }
 
 func (q *DelayQueue) consume() error {
-	// pending2ready
+	// pending to ready
 	err := q.pending2Ready()
 	if err != nil {
 		return err
@@ -346,9 +337,11 @@ func (q *DelayQueue) consume() error {
 		}
 		if ack {
 			err = q.ack(idStr)
-			if err != nil {
-				return err
-			}
+		} else {
+			err = q.nack(idStr)
+		}
+		if err != nil {
+			return err
 		}
 		if fetchCount >= q.fetchLimit {
 			break
@@ -380,9 +373,11 @@ func (q *DelayQueue) consume() error {
 		}
 		if ack {
 			err = q.ack(idStr)
-			if err != nil {
-				return err
-			}
+		} else {
+			err = q.nack(idStr)
+		}
+		if err != nil {
+			return err
 		}
 		if fetchCount >= q.fetchLimit {
 			break
