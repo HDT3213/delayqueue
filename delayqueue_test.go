@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -52,6 +53,47 @@ func TestDelayQueue_consume(t *testing.T) {
 			if v != retryCount+1 {
 				t.Errorf("expect %d delivery, actual %d", retryCount+1, v)
 			}
+		}
+	}
+}
+
+func TestDelayQueue_ConcurrentConsume(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	size := 101 // use a prime number may found some hidden bugs ^_^
+	retryCount := 3
+	mu := sync.Mutex{}
+	deliveryCount := make(map[string]int)
+	cb := func(s string) bool {
+		mu.Lock()
+		deliveryCount[s]++
+		mu.Unlock()
+		return true
+	}
+	queue := NewQueue("test", redisCli, cb).
+		WithFetchInterval(time.Millisecond * 50).
+		WithMaxConsumeDuration(0).
+		WithLogger(log.New(os.Stderr, "[DelayQueue]", log.LstdFlags)).
+		WithConcurrent(4)
+
+	for i := 0; i < size; i++ {
+		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount))
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	for i := 0; i < 2*size; i++ {
+		err := queue.consume()
+		if err != nil {
+			t.Errorf("consume error: %v", err)
+			return
+		}
+	}
+	for k, v := range deliveryCount {
+		if v != 1 {
+			t.Errorf("expect 1 delivery, actual %d. key: %s", v, k)
 		}
 	}
 }

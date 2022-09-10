@@ -8,12 +8,20 @@
 
 DelayQueue is a message queue supporting delayed/scheduled delivery based on redis.
 
-DelayQueue guarantees to deliver at least once.
-
 DelayQueue support ACK/Retry mechanism, it will re-deliver message after a while as long as no confirmation is received.
-As long as Redis doesn't crash, consumer crashes won't cause message loss.
+As long as Redis doesn't crash, consumer crashes won't cause message loss. 
 
-## Example
+DelayQueue can works safely in a distributed environment, you could deliver message to same queue or consume message from same queue at multiple machines. 
+
+## Install
+
+DelayQueue requires a Go version with modules support. Run following command line in your project with go.mod:
+
+```
+go get github.com/hdt3213/delayqueue
+```
+
+## Get Started
 
 ```go
 package main
@@ -33,7 +41,7 @@ func main() {
 		// callback returns true to confirm successful consumption.
 		// If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
 		return true
-	})
+	}).WithConcurrent(4) // set the number of concurrent consumers 
 	// send delay message
 	for i := 0; i < 10; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), time.Hour, delayqueue.WithRetryCount(3))
@@ -54,21 +62,28 @@ func main() {
 }
 ```
 
-## options
+## Options
 
-```
+```go
 WithLogger(logger *log.Logger)
 ```
 
 WithLogger customizes logger for queue
 
+
+```go
+WithConcurrent(c uint) 
 ```
+
+WithConcurrent sets the number of concurrent consumers
+
+```go
 WithFetchInterval(d time.Duration)
 ```
 
 WithFetchInterval customizes the interval at which consumer fetch message from redis
 
-```
+```go
 WithMaxConsumeDuration(d time.Duration)
 ```
 
@@ -77,17 +92,29 @@ WithMaxConsumeDuration customizes max consume duration
 If no acknowledge received within WithMaxConsumeDuration after message delivery, DelayQueue will try to deliver this
 message again
 
-```
+```go
 WithFetchLimit(limit uint)
 ```
 
-WithFetchLimit limits the max number of messages at one time
+WithFetchLimit limits the max number of unack (processing) messages
 
 
-```
+```go
 WithDefaultRetryCount(count uint)
 ```
 
 WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue
 
 use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
+
+# More Details
+
+Here is the complete flowchart:
+
+![](https://s2.loli.net/2022/09/10/tziHmcAX4sFJPN6.png)
+
+- pending: A sorted set of messages pending for delivery. `member` is message id, `score` is delivery unix timestamp.
+- ready: A list of messages ready to deliver. Workers fetch messages from here.
+- unack: A sorted set of messages waiting for ack (successfully consumed confirmation) which means the messages here is being processing. `member` is message id, `score` is the unix timestamp of processing deadline.
+- retry: A list of messages which processing exceeded deadline and waits for retry
+- garbage: A list of messages reaching max retry count and waits for cleaning 
