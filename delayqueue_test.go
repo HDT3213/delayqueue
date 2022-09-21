@@ -31,7 +31,7 @@ func TestDelayQueue_consume(t *testing.T) {
 		WithFetchLimit(1)
 
 	for i := 0; i < size; i++ {
-		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount))
+		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount),WithMsgTTL(time.Hour))
 		if err != nil {
 			t.Error(err)
 		}
@@ -79,7 +79,7 @@ func TestDelayQueue_ConcurrentConsume(t *testing.T) {
 		WithConcurrent(4)
 
 	for i := 0; i < size; i++ {
-		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount))
+		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount),WithMsgTTL(time.Hour))
 		if err != nil {
 			t.Error(err)
 		}
