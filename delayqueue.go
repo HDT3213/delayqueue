@@ -120,6 +120,14 @@ func WithRetryCount(count int) interface{} {
 	return retryCountOpt(count)
 }
 
+type msgTTLOpt time.Duration
+
+// WithMsgTTL set ttl for a msg
+// example: queue.SendDelayMsg(payload, duration, delayqueue.WithMsgTTL(Hour))
+func WithMsgTTL(d time.Duration) interface{} {
+	return msgTTLOpt(d)
+}
+
 // SendScheduleMsg submits a message delivered at given time
 func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interface{}) error {
 	// parse options
@@ -128,6 +136,8 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 		switch o := opt.(type) {
 		case retryCountOpt:
 			retryCount = uint(o)
+		case msgTTLOpt:
+			q.msgTTL = time.Duration(o)
 		}
 	}
 	// generate id
