@@ -16,7 +16,7 @@ func TestDelayQueue_consume(t *testing.T) {
 		Addr: "127.0.0.1:6379",
 	})
 	redisCli.FlushDB(context.Background())
-	size := 10
+	size := 10000
 	retryCount := 3
 	deliveryCount := make(map[string]int)
 	cb := func(s string) bool {
@@ -28,7 +28,7 @@ func TestDelayQueue_consume(t *testing.T) {
 		WithFetchInterval(time.Millisecond * 50).
 		WithMaxConsumeDuration(0).
 		WithLogger(log.New(os.Stderr, "[DelayQueue]", log.LstdFlags)).
-		WithFetchLimit(1)
+		WithFetchLimit(2)
 
 	for i := 0; i < size; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount),WithMsgTTL(time.Hour))
