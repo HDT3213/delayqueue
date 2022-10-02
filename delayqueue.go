@@ -200,7 +200,7 @@ func (q *DelayQueue) pending2Ready() error {
 	return nil
 }
 
-// pending2ReadyScript atomically moves messages from ready to unack
+// ready2UnackScript atomically moves messages from ready to unack
 // keys: readyKey/retryKey, unackKey
 // argv: retryTime
 const ready2UnackScript = `
@@ -338,7 +338,7 @@ local unack2retry = function(msgs)
 	local retryCounts = redis.call('HMGet', KEYS[2], unpack(msgs)) -- get retry count
 	for i,v in ipairs(retryCounts) do
 		local k = msgs[i]
-		if tonumber(v) > 0 then
+		if v ~= nil and v ~= '' and tonumber(v) > 0 then
 			redis.call("HIncrBy", KEYS[2], k, -1) -- reduce retry count
 			redis.call("LPush", KEYS[3], k) -- add to retry
 		else
