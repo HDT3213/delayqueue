@@ -98,6 +98,17 @@ WithFetchLimit(limit uint)
 
 WithFetchLimit limits the max number of unack (processing) messages
 
+```go
+UseHashTagKey()
+```
+
+UseHashTagKey add hashtags to redis keys to ensure all keys of this queue are allocated in the same hash slot.
+
+If you are using Codis/AliyunRedisCluster/TencentCloudRedisCluster, you should add this option to NewQueue: `NewQueue("test", redisCli, cb, UseHashTagKey())`. This Option cannot be changed after DelayQueue has been created.
+
+WARNING! CHANGING(add or remove) this option will cause DelayQueue failing to read existed data in redis
+
+> see more:  https://redis.io/docs/reference/cluster-spec/#hash-tags
 
 ```go
 WithDefaultRetryCount(count uint)

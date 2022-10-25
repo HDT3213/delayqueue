@@ -35,9 +35,19 @@ type DelayQueue struct {
 	concurrent uint
 }
 
+type hashTagKeyOpt int
+
+// UseHashTagKey add hashtags to redis keys to ensure all keys of this queue are allocated in the same hash slot.
+// If you are using Codis/AliyunRedisCluster/TencentCloudRedisCluster, add this option to NewQueue
+// WARNING! Changing (add or remove) this option will cause DelayQueue failing to read existed data in redis
+// see more:  https://redis.io/docs/reference/cluster-spec/#hash-tags
+func UseHashTagKey() interface{} {
+	return hashTagKeyOpt(1)
+}
+
 // NewQueue creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
 // callback returns true to confirm successful consumption. If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
-func NewQueue(name string, cli *redis.Client, callback func(string) bool) *DelayQueue {
+func NewQueue(name string, cli *redis.Client, callback func(string) bool, opts ...interface{}) *DelayQueue {
 	if name == "" {
 		panic("name is required")
 	}
@@ -47,16 +57,29 @@ func NewQueue(name string, cli *redis.Client, callback func(string) bool) *Delay
 	if callback == nil {
 		panic("callback is required")
 	}
+	useHashTag := false
+	for _, opt := range opts {
+		switch opt.(type) {
+		case hashTagKeyOpt:
+			useHashTag = true
+		}
+	}
+	var keyPrefix string
+	if useHashTag {
+		keyPrefix = "{dp:" + name + "}"
+	} else {
+		keyPrefix = "dp:" + name
+	}
 	return &DelayQueue{
 		name:               name,
 		redisCli:           cli,
 		cb:                 callback,
-		pendingKey:         "dp:" + name + ":pending",
-		readyKey:           "dp:" + name + ":ready",
-		unAckKey:           "dp:" + name + ":unack",
-		retryKey:           "dp:" + name + ":retry",
-		retryCountKey:      "dp:" + name + ":retry:cnt",
-		garbageKey:         "dp:" + name + ":garbage",
+		pendingKey:         keyPrefix + ":pending",
+		readyKey:           keyPrefix + ":ready",
+		unAckKey:           keyPrefix + ":unack",
+		retryKey:           keyPrefix + ":retry",
+		retryCountKey:      keyPrefix + ":retry:cnt",
+		garbageKey:         keyPrefix + ":garbage",
 		close:              make(chan struct{}, 1),
 		maxConsumeDuration: 5 * time.Second,
 		msgTTL:             time.Hour,
