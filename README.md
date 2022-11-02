@@ -6,6 +6,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/HDT3213/delayqueue)](https://goreportcard.com/report/github.com/HDT3213/delayqueue)
 [![Go Reference](https://pkg.go.dev/badge/github.com/hdt3213/delayqueue.svg)](https://pkg.go.dev/github.com/hdt3213/delayqueue)
 
+[中文版](https://github.com/HDT3213/delayqueue/blob/master/README_CN.md)
+
 DelayQueue is a message queue supporting delayed/scheduled delivery based on redis.
 
 DelayQueue support ACK/Retry mechanism, it will re-deliver message after a while as long as no confirmation is received.
