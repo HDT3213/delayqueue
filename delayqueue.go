@@ -3,8 +3,8 @@ package delayqueue
 import (
 	"context"
 	"fmt"
-	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"sync"
 	"time"
@@ -179,7 +179,7 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 		return fmt.Errorf("store retry count failed: %v", err)
 	}
 	// put to pending
-	err = q.redisCli.ZAdd(ctx, q.pendingKey, &redis.Z{Score: float64(t.Unix()), Member: idStr}).Err()
+	err = q.redisCli.ZAdd(ctx, q.pendingKey, redis.Z{Score: float64(t.Unix()), Member: idStr}).Err()
 	if err != nil {
 		return fmt.Errorf("push to pending failed: %v", err)
 	}
@@ -340,7 +340,7 @@ func (q *DelayQueue) ack(idStr string) error {
 func (q *DelayQueue) nack(idStr string) error {
 	ctx := context.Background()
 	// update retry time as now, unack2Retry will move it to retry immediately
-	err := q.redisCli.ZAdd(ctx, q.unAckKey, &redis.Z{
+	err := q.redisCli.ZAdd(ctx, q.unAckKey, redis.Z{
 		Member: idStr,
 		Score:  float64(time.Now().Unix()),
 	}).Err()

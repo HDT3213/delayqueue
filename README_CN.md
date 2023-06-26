@@ -21,13 +21,15 @@ DelayQueue 的主要优势：
 go get github.com/hdt3213/delayqueue
 ```
 
+> 如果您仍在使用 `github.com/go-redis/redis/v8` 请安装 `go get github.com/hdt3213/delayqueue@v8`
+
 # 开始使用
 
 ```go
 package main
 
 import (
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/hdt3213/delayqueue"
 	"strconv"
 	"time"

@@ -25,13 +25,15 @@ DelayQueue requires a Go version with modules support. Run following command lin
 go get github.com/hdt3213/delayqueue
 ```
 
+> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
+
 ## Get Started
 
 ```go
 package main
 
 import (
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/hdt3213/delayqueue"
 	"strconv"
 	"time"
