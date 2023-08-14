@@ -12,10 +12,10 @@ DelayQueue is a message queue supporting delayed/scheduled delivery based on red
 
 Core Advantages:
 
-- Support ACK/Retry mechanism, it will re-deliver message after a while as long as no confirmation is received. As long as Redis doesn't crash, consumer crashes won't cause message loss.
-- Works safely in a distributed environment, you could deliver message to same queue or consume message from same queue at multiple machines.
-- A message will be consumed by one and only one consumer.
-- Consumers control the flow of messages, NO NEED FOR ANY OTHER MIDDLEWARES except redis.
+- Guaranteed at least once consumption
+- Auto retry failed messages
+- Works out of the box, Config Nothing and Deploy Nothing, A Redis is all you need.
+- Natively adapted to the distributed environment, workers can be added, removed or migrated at any time
 
 ## Install
 
