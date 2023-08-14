@@ -8,14 +8,15 @@
 
 [中文版](https://github.com/HDT3213/delayqueue/blob/master/README_CN.md)
 
-DelayQueue is a message queue supporting delayed/scheduled delivery based on redis.
+DelayQueue is a message queue supporting delayed/scheduled delivery based on redis. It is designed to be reliable, scalable and easy to get started.
 
 Core Advantages:
 
 - Guaranteed at least once consumption
 - Auto retry failed messages
 - Works out of the box, Config Nothing and Deploy Nothing, A Redis is all you need.
-- Natively adapted to the distributed environment, workers can be added, removed or migrated at any time
+- Natively adapted to the distributed environment, messages processed concurrently on multiple machines
+. workers can be added, removed or migrated at any time
 
 ## Install
 
