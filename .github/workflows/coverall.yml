@@ -18,10 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: zhulik/redis-action@1.1.0
-        with:
-          redis version: '5'
-          number of databases: 16
+      - name: install redis cluster service
+        uses: pfapi/redis-cluster-service@v1
+
+      - name: start redis cluster
+        run: sudo systemctl start redis-cluster
 
       - uses: actions/setup-go@v3
         with:
