@@ -16,7 +16,8 @@ Core Advantages:
 - Auto retry failed messages
 - Works out of the box, Config Nothing and Deploy Nothing, A Redis is all you need.
 - Natively adapted to the distributed environment, messages processed concurrently on multiple machines
-. workers can be added, removed or migrated at any time
+. Workers can be added, removed or migrated at any time
+- Support Redis Cluster for high availability
 
 ## Install
 
@@ -25,8 +26,6 @@ DelayQueue requires a Go version with modules support. Run following command lin
 ```
 go get github.com/hdt3213/delayqueue
 ```
-
-> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
 
 ## Get Started
 
@@ -68,6 +67,9 @@ func main() {
 	<-done
 }
 ```
+
+> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
+> If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
 
 ## Options
 
@@ -125,7 +127,38 @@ WithDefaultRetryCount customizes the max number of retry, it effects of messages
 
 use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
 
-# More Details
+## Cluster
+
+If you are using Redis Cluster, please use `NewQueueOnCluster`
+
+```go
+redisCli := redis.NewClusterClient(&redis.ClusterOptions{
+    Addrs: []string{
+        "127.0.0.1:7000",
+        "127.0.0.1:7001",
+        "127.0.0.1:7002",
+    },
+})
+callback := func(s string) bool {
+    return true
+}
+queue := NewQueueOnCluster("test", redisCli, callback)
+```
+
+If you are using transparent clusters, such as codis, twemproxy, or the redis of cluster architecture on aliyun, tencentcloud,
+just use `NewQueue` and enable hash tag
+
+```go
+redisCli := redis.NewClient(&redis.Options{
+    Addr: "127.0.0.1:6379",
+})
+callback := func(s string) bool {
+    return true
+}
+queue := delayqueue.NewQueue("example", redisCli, callback, UseHashTagKey())
+```
+
+## More Details
 
 Here is the complete flowchart:
 

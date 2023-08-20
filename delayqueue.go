@@ -1,11 +1,11 @@
 package delayqueue
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -14,7 +14,7 @@ import (
 type DelayQueue struct {
 	// name for this Queue. Make sure the name is unique in redis database
 	name          string
-	redisCli      *redis.Client
+	redisCli      RedisCli
 	cb            func(string) bool
 	pendingKey    string // sorted set: message id -> delivery time
 	readyKey      string // list
@@ -22,6 +22,7 @@ type DelayQueue struct {
 	retryKey      string // list
 	retryCountKey string // hash: message id -> remain retry count
 	garbageKey    string // set: message id
+	useHashTag    bool
 	ticker        *time.Ticker
 	logger        *log.Logger
 	close         chan struct{}
@@ -31,8 +32,24 @@ type DelayQueue struct {
 	defaultRetryCount  uint
 	fetchInterval      time.Duration
 	fetchLimit         uint
+	concurrent         uint
+}
 
-	concurrent uint
+// NilErr represents redis nil
+var NilErr = errors.New("nil")
+
+// RedisCli is abstraction for redis client, required commands only not all commands
+type RedisCli interface {
+	Eval(script string, keys []string, args []interface{}) (interface{}, error) // args should be string, integer or float
+	Set(key string, value string, expiration time.Duration) error
+	Get(key string) (string, error)
+	Del(keys []string) error
+	HSet(key string, field string, value string) error
+	HDel(key string, fields []string) error
+	SMembers(key string) ([]string, error)
+	SRem(key string, members []string) error
+	ZAdd(key string, values map[string]float64) error
+	ZRem(key string, fields []string) error
 }
 
 type hashTagKeyOpt int
@@ -45,9 +62,9 @@ func UseHashTagKey() interface{} {
 	return hashTagKeyOpt(1)
 }
 
-// NewQueue creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
+// NewQueue0 creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
 // callback returns true to confirm successful consumption. If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
-func NewQueue(name string, cli *redis.Client, callback func(string) bool, opts ...interface{}) *DelayQueue {
+func NewQueue0(name string, cli RedisCli, callback func(string) bool, opts ...interface{}) *DelayQueue {
 	if name == "" {
 		panic("name is required")
 	}
@@ -80,6 +97,7 @@ func NewQueue(name string, cli *redis.Client, callback func(string) bool, opts .
 		retryKey:           keyPrefix + ":retry",
 		retryCountKey:      keyPrefix + ":retry:cnt",
 		garbageKey:         keyPrefix + ":garbage",
+		useHashTag:         useHashTag,
 		close:              make(chan struct{}, 1),
 		maxConsumeDuration: 5 * time.Second,
 		msgTTL:             time.Hour,
@@ -132,6 +150,9 @@ func (q *DelayQueue) WithDefaultRetryCount(count uint) *DelayQueue {
 }
 
 func (q *DelayQueue) genMsgKey(idStr string) string {
+	if q.useHashTag {
+		return "{dp:" + q.name + "}" + ":msg:" + idStr
+	}
 	return "dp:" + q.name + ":msg:" + idStr
 }
 
@@ -165,21 +186,20 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 	}
 	// generate id
 	idStr := uuid.Must(uuid.NewRandom()).String()
-	ctx := context.Background()
 	now := time.Now()
 	// store msg
 	msgTTL := t.Sub(now) + q.msgTTL // delivery + q.msgTTL
-	err := q.redisCli.Set(ctx, q.genMsgKey(idStr), payload, msgTTL).Err()
+	err := q.redisCli.Set(q.genMsgKey(idStr), payload, msgTTL)
 	if err != nil {
 		return fmt.Errorf("store msg failed: %v", err)
 	}
 	// store retry count
-	err = q.redisCli.HSet(ctx, q.retryCountKey, idStr, retryCount).Err()
+	err = q.redisCli.HSet(q.retryCountKey, idStr, strconv.Itoa(int(retryCount)))
 	if err != nil {
 		return fmt.Errorf("store retry count failed: %v", err)
 	}
 	// put to pending
-	err = q.redisCli.ZAdd(ctx, q.pendingKey, redis.Z{Score: float64(t.Unix()), Member: idStr}).Err()
+	err = q.redisCli.ZAdd(q.pendingKey, map[string]float64{idStr: float64(t.Unix())})
 	if err != nil {
 		return fmt.Errorf("push to pending failed: %v", err)
 	}
@@ -214,10 +234,9 @@ redis.call('ZRemRangeByScore', KEYS[1], '0', ARGV[1])  -- remove msgs from pendi
 
 func (q *DelayQueue) pending2Ready() error {
 	now := time.Now().Unix()
-	ctx := context.Background()
 	keys := []string{q.pendingKey, q.readyKey}
-	err := q.redisCli.Eval(ctx, pending2ReadyScript, keys, now).Err()
-	if err != nil && err != redis.Nil {
+	_, err := q.redisCli.Eval(pending2ReadyScript, keys, []interface{}{now})
+	if err != nil && err != NilErr {
 		return fmt.Errorf("pending2ReadyScript failed: %v", err)
 	}
 	return nil
@@ -235,10 +254,9 @@ return msg
 
 func (q *DelayQueue) ready2Unack() (string, error) {
 	retryTime := time.Now().Add(q.maxConsumeDuration).Unix()
-	ctx := context.Background()
 	keys := []string{q.readyKey, q.unAckKey}
-	ret, err := q.redisCli.Eval(ctx, ready2UnackScript, keys, retryTime).Result()
-	if err == redis.Nil {
+	ret, err := q.redisCli.Eval(ready2UnackScript, keys, []interface{}{retryTime})
+	if err == NilErr {
 		return "", err
 	}
 	if err != nil {
@@ -253,11 +271,10 @@ func (q *DelayQueue) ready2Unack() (string, error) {
 
 func (q *DelayQueue) retry2Unack() (string, error) {
 	retryTime := time.Now().Add(q.maxConsumeDuration).Unix()
-	ctx := context.Background()
 	keys := []string{q.retryKey, q.unAckKey}
-	ret, err := q.redisCli.Eval(ctx, ready2UnackScript, keys, retryTime, q.retryKey, q.unAckKey).Result()
-	if err == redis.Nil {
-		return "", redis.Nil
+	ret, err := q.redisCli.Eval(ready2UnackScript, keys, []interface{}{retryTime, q.retryKey, q.unAckKey})
+	if err == NilErr {
+		return "", NilErr
 	}
 	if err != nil {
 		return "", fmt.Errorf("ready2UnackScript failed: %v", err)
@@ -270,9 +287,8 @@ func (q *DelayQueue) retry2Unack() (string, error) {
 }
 
 func (q *DelayQueue) callback(idStr string) error {
-	ctx := context.Background()
-	payload, err := q.redisCli.Get(ctx, q.genMsgKey(idStr)).Result()
-	if err == redis.Nil {
+	payload, err := q.redisCli.Get(q.genMsgKey(idStr))
+	if err == NilErr {
 		return nil
 	}
 	if err != nil {
@@ -326,24 +342,21 @@ func (q *DelayQueue) batchCallback(ids []string) {
 }
 
 func (q *DelayQueue) ack(idStr string) error {
-	ctx := context.Background()
-	err := q.redisCli.ZRem(ctx, q.unAckKey, idStr).Err()
+	err := q.redisCli.ZRem(q.unAckKey, []string{idStr})
 	if err != nil {
 		return fmt.Errorf("remove from unack failed: %v", err)
 	}
 	// msg key has ttl, ignore result of delete
-	_ = q.redisCli.Del(ctx, q.genMsgKey(idStr)).Err()
-	q.redisCli.HDel(ctx, q.retryCountKey, idStr)
+	_ = q.redisCli.Del([]string{q.genMsgKey(idStr)})
+	_ = q.redisCli.HDel(q.retryCountKey, []string{idStr})
 	return nil
 }
 
 func (q *DelayQueue) nack(idStr string) error {
-	ctx := context.Background()
 	// update retry time as now, unack2Retry will move it to retry immediately
-	err := q.redisCli.ZAdd(ctx, q.unAckKey, redis.Z{
-		Member: idStr,
-		Score:  float64(time.Now().Unix()),
-	}).Err()
+	err := q.redisCli.ZAdd(q.unAckKey, map[string]float64{
+		idStr: float64(time.Now().Unix()),
+	})
 	if err != nil {
 		return fmt.Errorf("negative ack failed: %v", err)
 	}
@@ -392,19 +405,17 @@ redis.call('ZRemRangeByScore', KEYS[1], '0', ARGV[1])  -- remove msgs from unack
 `
 
 func (q *DelayQueue) unack2Retry() error {
-	ctx := context.Background()
 	keys := []string{q.unAckKey, q.retryCountKey, q.retryKey, q.garbageKey}
 	now := time.Now()
-	err := q.redisCli.Eval(ctx, unack2RetryScript, keys, now.Unix()).Err()
-	if err != nil && err != redis.Nil {
+	_, err := q.redisCli.Eval(unack2RetryScript, keys, []interface{}{now.Unix()})
+	if err != nil && err != NilErr {
 		return fmt.Errorf("unack to retry script failed: %v", err)
 	}
 	return nil
 }
 
 func (q *DelayQueue) garbageCollect() error {
-	ctx := context.Background()
-	msgIds, err := q.redisCli.SMembers(ctx, q.garbageKey).Result()
+	msgIds, err := q.redisCli.SMembers(q.garbageKey)
 	if err != nil {
 		return fmt.Errorf("smembers failed: %v", err)
 	}
@@ -416,12 +427,12 @@ func (q *DelayQueue) garbageCollect() error {
 	for _, idStr := range msgIds {
 		msgKeys = append(msgKeys, q.genMsgKey(idStr))
 	}
-	err = q.redisCli.Del(ctx, msgKeys...).Err()
-	if err != nil && err != redis.Nil {
+	err = q.redisCli.Del(msgKeys)
+	if err != nil && err != NilErr {
 		return fmt.Errorf("del msgs failed: %v", err)
 	}
-	err = q.redisCli.SRem(ctx, q.garbageKey, msgIds).Err()
-	if err != nil && err != redis.Nil {
+	err = q.redisCli.SRem(q.garbageKey, msgIds)
+	if err != nil && err != NilErr {
 		return fmt.Errorf("remove from garbage key failed: %v", err)
 	}
 	return nil
@@ -437,7 +448,7 @@ func (q *DelayQueue) consume() error {
 	ids := make([]string, 0, q.fetchLimit)
 	for {
 		idStr, err := q.ready2Unack()
-		if err == redis.Nil { // consumed all
+		if err == NilErr { // consumed all
 			break
 		}
 		if err != nil {
@@ -464,7 +475,7 @@ func (q *DelayQueue) consume() error {
 	ids = make([]string, 0, q.fetchLimit)
 	for {
 		idStr, err := q.retry2Unack()
-		if err == redis.Nil { // consumed all
+		if err == NilErr { // consumed all
 			break
 		}
 		if err != nil {

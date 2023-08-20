@@ -12,6 +12,7 @@ DelayQueue 的主要优势：
 - 自动重试处理失败的消息
 - 开箱即用, 无需部署或安装中间件, 只需要一个 Redis 即可工作
 - 原生适配分布式环境, 可在多台机器上并发的处理消息. 可以随时增加、减少或迁移 Worker
+- 支持各类 Redis 集群
 
 # 安装
 
@@ -63,6 +64,9 @@ func main() {
 	<-done // 如需等待消费者关闭，监听 done 即可 
 }
 ```
+
+> 如果您仍在使用 redis/v8 请使用 v8 分支: `go get github.com/hdt3213/delayqueue@v8`
+> 如果您在使用其他的 redis 客户端, 可以将其包装到 [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) 接口中
 
 # 选项
 
@@ -116,6 +120,36 @@ WithDefaultRetryCount(count uint)
 设置队列中消息的默认重试次数。
 
 在调用  DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 发送消息时，可以调用 WithRetryCount 为这条消息单独指定重试次数。
+
+# 集群
+
+如果需要在 Redis Cluster 上工作, 请使用 `NewQueueOnCluster`:
+
+```go
+redisCli := redis.NewClusterClient(&redis.ClusterOptions{
+    Addrs: []string{
+        "127.0.0.1:7000",
+        "127.0.0.1:7001",
+        "127.0.0.1:7002",
+    },
+})
+callback := func(s string) bool {
+    return true
+}
+queue := NewQueueOnCluster("test", redisCli, callback)
+```
+
+如果是阿里云,腾讯云的 Redis 集群版或 codis, twemproxy 这类透明式的集群, 使用 `NewQueue` 并启用 UseHashTagKey() 即可:
+
+```go
+redisCli := redis.NewClient(&redis.Options{
+    Addr: "127.0.0.1:6379",
+})
+callback := func(s string) bool {
+    return true
+}
+queue := delayqueue.NewQueue("example", redisCli, callback, UseHashTagKey())
+```
 
 # 更多细节
 
