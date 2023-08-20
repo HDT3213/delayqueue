@@ -164,7 +164,7 @@ func TestDelayQueue_StopConsume(t *testing.T) {
 	<-done
 }
 
-func TestDelayQueue_Massive_Consume(t *testing.T) {
+func TestDelayQueue_Massive_Backlog(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr: "127.0.0.1:6379",
 	})
@@ -195,7 +195,7 @@ func TestDelayQueue_Massive_Consume(t *testing.T) {
 	ids := make([]string, 0, q.fetchLimit)
 	for {
 		idStr, err := q.ready2Unack()
-		if err == redis.Nil { // consumed all
+		if err == NilErr { // consumed all
 			break
 		}
 		if err != nil {
