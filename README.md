@@ -71,6 +71,22 @@ func main() {
 > if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
 > If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
 
+## Producer consumer distributed deployment
+
+By default, delayqueue instances can be both producers and consumers. If your program only need producers and consumers are placed elsewhere, `delayqueue.NewProducer` is a good option for you.
+
+```go
+func consumer() {
+	queue := NewQueue("test", redisCli, cb)
+	queue.StartConsume()
+}
+
+func producer() {
+	publisher := NewPublisher("test", redisCli)
+	publisher.SendDelayMsg(strconv.Itoa(i), 0)
+}
+```
+
 ## Options
 
 ```go

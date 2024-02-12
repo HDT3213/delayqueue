@@ -14,7 +14,7 @@ DelayQueue 的主要优势：
 - 原生适配分布式环境, 可在多台机器上并发的处理消息. 可以随时增加、减少或迁移 Worker
 - 支持各类 Redis 集群
 
-# 安装
+## 安装
 
 在启用了 go mod 的项目中运行下列命令即可完成安装：
 
@@ -24,7 +24,7 @@ go get github.com/hdt3213/delayqueue
 
 > 如果您仍在使用 `github.com/go-redis/redis/v8` 请安装 `go get github.com/hdt3213/delayqueue@v8`
 
-# 开始使用
+## 开始使用
 
 ```go
 package main
@@ -68,7 +68,23 @@ func main() {
 > 如果您仍在使用 redis/v8 请使用 v8 分支: `go get github.com/hdt3213/delayqueue@v8`
 > 如果您在使用其他的 redis 客户端, 可以将其包装到 [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) 接口中
 
-# 选项
+## 分开部署生产者和消费者
+
+默认情况下 delayqueue 实例既可以做生产者也可以做消费者。如果某些程序只需要发送消息，消费者部署在其它程序中，那么可以使用 `delayqueue.NewProducer`.
+
+```go
+func consumer() {
+	queue := NewQueue("test", redisCli, cb)
+	queue.StartConsume()
+}
+
+func producer() {
+	publisher := NewPublisher("test", redisCli)
+	publisher.SendDelayMsg(strconv.Itoa(i), 0)
+}
+```
+
+## 选项
 
 ```go
 WithLogger(logger *log.Logger)
@@ -121,7 +137,7 @@ WithDefaultRetryCount(count uint)
 
 在调用  DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 发送消息时，可以调用 WithRetryCount 为这条消息单独指定重试次数。
 
-# 集群
+## 集群
 
 如果需要在 Redis Cluster 上工作, 请使用 `NewQueueOnCluster`:
 
@@ -151,7 +167,7 @@ callback := func(s string) bool {
 queue := delayqueue.NewQueue("example", redisCli, callback, UseHashTagKey())
 ```
 
-# 更多细节
+## 更多细节
 
 完整流程如图所示：
 

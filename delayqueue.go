@@ -53,6 +53,7 @@ type RedisCli interface {
 }
 
 type hashTagKeyOpt int
+type noCallbackOpt int
 
 // UseHashTagKey add hashtags to redis keys to ensure all keys of this queue are allocated in the same hash slot.
 // If you are using Codis/AliyunRedisCluster/TencentCloudRedisCluster, add this option to NewQueue
@@ -71,15 +72,18 @@ func NewQueue0(name string, cli RedisCli, callback func(string) bool, opts ...in
 	if cli == nil {
 		panic("cli is required")
 	}
-	if callback == nil {
-		panic("callback is required")
-	}
 	useHashTag := false
+	noCallback := false
 	for _, opt := range opts {
 		switch opt.(type) {
 		case hashTagKeyOpt:
 			useHashTag = true
+		case noCallbackOpt:
+			noCallback = true
 		}
+	}
+	if !noCallback && callback == nil {
+		panic("callback is required")
 	}
 	var keyPrefix string
 	if useHashTag {
