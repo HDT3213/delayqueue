@@ -218,16 +218,16 @@ func (q *DelayQueue) SendDelayMsg(payload string, duration time.Duration, opts .
 const pending2ReadyScript = `
 local msgs = redis.call('ZRangeByScore', KEYS[1], '0', ARGV[1])  -- get ready msg
 if (#msgs == 0) then return end
-local args2 = {'LPush', KEYS[2]} -- push into ready
+local args2 = {} -- keys to push into ready
 for _,v in ipairs(msgs) do
 	table.insert(args2, v) 
     if (#args2 == 4000) then
-		redis.call(unpack(args2))
-		args2 = {'LPush', KEYS[2]}
+		redis.call('LPush', KEYS[2], unpack(args2))
+		args2 = {}
 	end
 end
 if (#args2 > 2) then 
-	redis.call(unpack(args2))
+	redis.call('LPush', KEYS[2], unpack(args2))
 end
 redis.call('ZRemRangeByScore', KEYS[1], '0', ARGV[1])  -- remove msgs from pending
 `
