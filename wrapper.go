@@ -92,6 +92,37 @@ func (r *redisV9Wrapper) ZRem(key string, members []string) error {
 	return wrapErr(r.inner.ZRem(ctx, key, members2...).Err())
 }
 
+func (r *redisV9Wrapper) ZCard(key string) (int64, error) {
+	ctx := context.Background()
+	return r.inner.ZCard(ctx, key).Result()
+}
+
+func (r *redisV9Wrapper) LLen(key string) (int64, error) {
+	ctx := context.Background()
+	return r.inner.LLen(ctx, key).Result()
+}
+
+func (r *redisV9Wrapper) Publish(channel string, payload string) error {
+	ctx := context.Background()
+	return r.inner.Publish(ctx, channel, payload).Err()
+}
+
+func (r *redisV9Wrapper) Subscribe(channel string) (<-chan string, func(), error) {
+	ctx := context.Background()
+	sub := r.inner.Subscribe(ctx, channel)
+	close := func() {
+		_ = sub.Close()
+	}
+	resultChan := make(chan string) // sub.Channel() has its own buffer
+	go func() {
+		for msg := range sub.Channel() {
+			resultChan <- msg.Payload
+		}
+	}()
+	
+	return resultChan, close, nil
+}
+
 type redisClusterWrapper struct {
 	inner *redis.ClusterClient
 }
@@ -162,6 +193,37 @@ func (r *redisClusterWrapper) ZRem(key string, members []string) error {
 		members2[i] = v
 	}
 	return wrapErr(r.inner.ZRem(ctx, key, members2...).Err())
+}
+
+func (r *redisClusterWrapper) ZCard(key string) (int64, error) {
+	ctx := context.Background()
+	return r.inner.ZCard(ctx, key).Result()
+}
+
+func (r *redisClusterWrapper) LLen(key string) (int64, error) {
+	ctx := context.Background()
+	return r.inner.LLen(ctx, key).Result()
+}
+
+func (r *redisClusterWrapper) Publish(channel string, payload string) error {
+	ctx := context.Background()
+	return r.inner.Publish(ctx, channel, payload).Err()
+}
+
+func (r *redisClusterWrapper) Subscribe(channel string) (<-chan string, func(), error) {
+	ctx := context.Background()
+	sub := r.inner.Subscribe(ctx, channel)
+	close := func() {
+		_ = sub.Close()
+	}
+	resultChan := make(chan string) // sub.Channel() has its own buffer
+	go func() {
+		for msg := range sub.Channel() {
+			resultChan <- msg.Payload
+		}
+	}()
+	
+	return resultChan, close, nil
 }
 
 func NewQueueOnCluster(name string, cli *redis.ClusterClient, callback func(string) bool, opts ...interface{}) *DelayQueue {

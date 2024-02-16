@@ -12,7 +12,8 @@ DelayQueue 的主要优势：
 - 自动重试处理失败的消息
 - 开箱即用, 无需部署或安装中间件, 只需要一个 Redis 即可工作
 - 原生适配分布式环境, 可在多台机器上并发的处理消息. 可以随时增加、减少或迁移 Worker
-- 支持各类 Redis 集群
+- 支持各类 Redis 集群, 详见[集群](./README_CN.md#集群)
+- 简单易用的监控数据导出，详见[监控](./README_CN.md#监控)
 
 ## 安装
 
@@ -136,6 +137,114 @@ WithDefaultRetryCount(count uint)
 设置队列中消息的默认重试次数。
 
 在调用  DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 发送消息时，可以调用 WithRetryCount 为这条消息单独指定重试次数。
+
+## 监控
+
+我们提供了 `Monitor` 来监控运行数据:
+
+```go
+monitor := delayqueue.NewMonitor("example", redisCli)
+```
+
+我们可以使用 `Monitor.ListenEvent` 注册一个可以收到队列中所有事件的监听器, 从而实现自定义的事件上报和指标监控。
+
+Monitor 可以受到所有 Worker 的事件， 包括运行在其它服务器上的 Worker.
+
+```go
+type EventListener interface {
+	OnEvent(*Event)
+}
+
+// returns: close function, error
+func (m *Monitor) ListenEvent(listener EventListener) (func(), error) 
+```
+
+Event 的定义在 [events.go](./events.go).
+
+此外，我们提供了一个 Demo，它会每分钟显示一次队列中产生和处理的消息数量。
+
+Demo 完整代码在 [example/monitor](./example/monitor/main.go).
+
+```go
+type MyProfiler struct {
+	List  []*Metrics
+	Start int64
+}
+
+func (p *MyProfiler) OnEvent(event *delayqueue.Event) {
+	sinceUptime := event.Timestamp - p.Start
+	upMinutes := sinceUptime / 60
+	if len(p.List) <= int(upMinutes) {
+		p.List = append(p.List, &Metrics{})
+	}
+	current := p.List[upMinutes]
+	switch event.Code {
+	case delayqueue.NewMessageEvent:
+		current.ProduceCount += event.MsgCount
+	case delayqueue.DeliveredEvent:
+		current.DeliverCount += event.MsgCount
+	case delayqueue.AckEvent:
+		current.ConsumeCount += event.MsgCount
+	case delayqueue.RetryEvent:
+		current.RetryCount += event.MsgCount
+	case delayqueue.FinalFailedEvent:
+		current.FailCount += event.MsgCount
+	}
+}
+
+func main() {
+	queue := delayqueue.NewQueue("example", redisCli, func(payload string) bool {
+		return true
+	})
+	start := time.Now()
+	// 注意: 使用 Monitor 前必须调用 EnableReport 
+	queue.EnableReport() 
+
+	// setup monitor
+	monitor := delayqueue.NewMonitor("example", redisCli)
+	listener := &MyProfiler{
+		Start: start.Unix(),
+	}
+	monitor.ListenEvent(listener)
+
+	// 每分钟打印一次报告
+	tick := time.Tick(time.Minute)
+	go func() {
+		for range tick {
+			minutes := len(listener.List)-1
+			fmt.Printf("%d: %#v", minutes, listener.List[minutes])
+		}
+	}()
+}
+```
+
+Monitor 使用 redis 的发布订阅功能来收集数据，使用 Monitor 前必须在所有 Worker 处调用 `EnableReport` 来启用上报。
+
+如果你不想使用 redis pub/sub, 可以调用 `DelayQueue.ListenEvent` 来直接收集数据。请注意，`DelayQueue.ListenEvent` 只能收到当前 Worker 的事件， 而 Monitor 可以收到所有 Worker 的事件。
+
+另外，`DelayQueue.ListenEvent` 会覆盖掉 Monitor 的监听器，再次调用 `EnableReport` 后 Monitor 才能恢复工作。
+
+### 获得状态信息
+
+Monitor 也可以直接获得一些队列的状态信息。
+
+```go
+func (m *Monitor) GetPendingCount() (int64, error) 
+```
+
+返回未到投递时间的消息数。
+
+```go
+func (m *Monitor) GetReadyCount() (int64, error)
+```
+
+返回已到投递时间但尚未发给 Worker 的消息数。
+
+```go
+func (m *Monitor) GetProcessingCount() (int64, error)
+```
+
+返回 Worker 正在处理中的消息数。
 
 ## 集群
 
