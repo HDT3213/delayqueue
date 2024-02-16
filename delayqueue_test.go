@@ -36,7 +36,7 @@ func TestDelayQueue_consume(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 10*size; i++ {
 		err := queue.consume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
@@ -85,7 +85,7 @@ func TestDelayQueueOnCluster(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	for i := 0; i < size; i++ {
+	for i := 0; i < 10*size; i++ {
 		err := queue.consume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
