@@ -69,7 +69,10 @@ type RedisCli interface {
 }
 
 type hashTagKeyOpt int
-type noCallbackOpt int
+
+// CallbackFunc receives and consumes messages
+// returns true to confirm successfully consumed, false to re-deliver this message
+type CallbackFunc = func(string) bool
 
 // UseHashTagKey add hashtags to redis keys to ensure all keys of this queue are allocated in the same hash slot.
 // If you are using Codis/AliyunRedisCluster/TencentCloudRedisCluster, add this option to NewQueue
@@ -81,7 +84,7 @@ func UseHashTagKey() interface{} {
 
 // NewQueue0 creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
 // callback returns true to confirm successful consumption. If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
-func NewQueue0(name string, cli RedisCli, callback func(string) bool, opts ...interface{}) *DelayQueue {
+func NewQueue0(name string, cli RedisCli, opts ...interface{}) *DelayQueue {
 	if name == "" {
 		panic("name is required")
 	}
@@ -89,17 +92,14 @@ func NewQueue0(name string, cli RedisCli, callback func(string) bool, opts ...in
 		panic("cli is required")
 	}
 	useHashTag := false
-	noCallback := false
+	var callback CallbackFunc = nil
 	for _, opt := range opts {
-		switch opt.(type) {
+		switch o := opt.(type) {
 		case hashTagKeyOpt:
 			useHashTag = true
-		case noCallbackOpt:
-			noCallback = true
+		case CallbackFunc:
+			callback = o
 		}
-	}
-	if !noCallback && callback == nil {
-		panic("callback is required")
 	}
 	var keyPrefix string
 	if useHashTag {
@@ -126,6 +126,13 @@ func NewQueue0(name string, cli RedisCli, callback func(string) bool, opts ...in
 		fetchInterval:      time.Second,
 		concurrent:         1,
 	}
+}
+
+// WithCallback set callback for queue to receives and consumes messages
+// callback returns true to confirm successfully consumed, false to re-deliver this message
+func (q *DelayQueue) WithCallback(callback CallbackFunc) *DelayQueue {
+	q.cb = callback
+	return q
 }
 
 // WithLogger customizes logger for queue
@@ -550,6 +557,7 @@ func (q *DelayQueue) consume() error {
 
 // StartConsume creates a goroutine to consume message from DelayQueue
 // use `<-done` to wait consumer stopping
+// If there is no callback set, StartConsume will panic
 func (q *DelayQueue) StartConsume() (done <-chan struct{}) {
 	if q.cb == nil {
 		panic("this instance has no callback")

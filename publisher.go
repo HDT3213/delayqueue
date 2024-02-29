@@ -14,9 +14,8 @@ type Publisher struct {
 
 // NewPublisher0 creates a new Publisher by a RedisCli instance
 func NewPublisher0(name string, cli RedisCli, opts ...interface{}) *Publisher {
-	opts = append(opts, noCallbackOpt(1))
 	return &Publisher{
-		inner: NewQueue0(name, cli, nil, opts...),
+		inner: NewQueue0(name, cli, opts...),
 	}
 }
 

@@ -24,7 +24,8 @@ func TestDelayQueue_consume(t *testing.T) {
 		i, _ := strconv.ParseInt(s, 10, 64)
 		return i%2 == 0
 	}
-	queue := NewQueue("test", redisCli, cb, UseHashTagKey()).
+	queue := NewQueue("test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
 		WithFetchInterval(time.Millisecond * 50).
 		WithMaxConsumeDuration(0).
 		WithLogger(log.New(os.Stderr, "[DelayQueue]", log.LstdFlags)).

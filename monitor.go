@@ -13,9 +13,8 @@ type Monitor struct {
 
 // NewMonitor0 creates a new Monitor by a RedisCli instance
 func NewMonitor0(name string, cli RedisCli, opts ...interface{}) *Monitor {
-	opts = append(opts, noCallbackOpt(1))
 	return &Monitor{
-		inner: NewQueue0(name, cli, nil, opts...),
+		inner: NewQueue0(name, cli, opts...),
 	}
 }
 

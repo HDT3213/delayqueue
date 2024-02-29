@@ -67,11 +67,14 @@ func main() {
 ```
 
 > 如果您仍在使用 redis/v8 请使用 v8 分支: `go get github.com/hdt3213/delayqueue@v8`
+
 > 如果您在使用其他的 redis 客户端, 可以将其包装到 [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) 接口中
+
+> 如果您不想在初始化时设置callback, 您可以使用 WithCallback 函数
 
 ## 分开部署生产者和消费者
 
-默认情况下 delayqueue 实例既可以做生产者也可以做消费者。如果某些程序只需要发送消息，消费者部署在其它程序中，那么可以使用 `delayqueue.NewProducer`.
+默认情况下 delayqueue 实例既可以做生产者也可以做消费者。如果某些程序只需要发送消息，消费者部署在其它程序中，那么可以使用 `delayqueue.NewPublisher`.
 
 ```go
 func consumer() {
@@ -88,32 +91,47 @@ func producer() {
 ## 选项
 
 ```go
-WithLogger(logger *log.Logger)
+func (q *DelayQueue)WithCallback(callback CallbackFunc) *DelayQueue
+```
+
+callback 函数负责接收并消费消息。callback 返回 true 确认已成功消费，返回 false 表示处理失败，需要重试。
+
+如果没有设置 callback, 调用 StartConsume 时会 panic。
+
+```go
+queue := NewQueue("test", redisCli)
+queue.WithCallback(func(payload string) bool {
+	return true
+})
+```
+
+```go
+func (q *DelayQueue)WithLogger(logger *log.Logger) *DelayQueue
 ```
 
 为 DelayQueue 设置 logger
 
 
 ```go
-WithConcurrent(c uint) 
+func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue 
 ```
 
 设置消费者并发数
 
 ```go
-WithFetchInterval(d time.Duration)
+func (q *DelayQueue)WithFetchInterval(d time.Duration) *DelayQueue
 ```
 
 设置消费者从 Redis 拉取消息的时间间隔
 
 ```go
-WithMaxConsumeDuration(d time.Duration)
+func (q *DelayQueue)WithMaxConsumeDuration(d time.Duration) *DelayQueue
 ```
 
 设置最长消费时间。若拉取消息后超出 MaxConsumeDuration 时限仍未返回 ACK 则认为消费失败，DelayQueue 会重新投递此消息。
 
 ```go
-WithFetchLimit(limit uint)
+func (q *DelayQueue)WithFetchLimit(limit uint) *DelayQueue
 ```
 
 FetchLimit 限制消费者从 Redis 中拉取的消息数目，即单个消费者正在处理中的消息数不会超过 FetchLimit

@@ -70,13 +70,16 @@ func main() {
 ```
 
 > if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
+
 > If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
+
+> If you don't want to set the callback during initialization, you can use func `WithCallback`.
 
 ## Producer consumer distributed deployment
 
 By default, delayqueue instances can be both producers and consumers. 
 
-If your program only need producers and consumers are placed elsewhere, `delayqueue.NewProducer` is a good option for you.
+If your program only need producers and consumers are placed elsewhere, `delayqueue.NewPublisher` is a good option for you.
 
 ```go
 func consumer() {
@@ -93,26 +96,42 @@ func producer() {
 ## Options
 
 ```go
-WithLogger(logger *log.Logger)
+func (q *DelayQueue)WithCallback(callback CallbackFunc) *DelayQueue
+```
+
+WithCallback set callback for queue to receives and consumes messages
+callback returns true to confirm successfully consumed, false to re-deliver this message.
+
+If there is no callback set, StartConsume will panic
+
+```go
+queue := NewQueue("test", redisCli)
+queue.WithCallback(func(payload string) bool {
+	return true
+})
+```
+
+```go
+func (q *DelayQueue)WithLogger(logger *log.Logger) *DelayQueue
 ```
 
 WithLogger customizes logger for queue
 
 
 ```go
-WithConcurrent(c uint) 
+func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue
 ```
 
 WithConcurrent sets the number of concurrent consumers
 
 ```go
-WithFetchInterval(d time.Duration)
+func (q *DelayQueue)WithFetchInterval(d time.Duration) *DelayQueue
 ```
 
 WithFetchInterval customizes the interval at which consumer fetch message from redis
 
 ```go
-WithMaxConsumeDuration(d time.Duration)
+func (q *DelayQueue)WithMaxConsumeDuration(d time.Duration) *DelayQueue
 ```
 
 WithMaxConsumeDuration customizes max consume duration
@@ -121,7 +140,7 @@ If no acknowledge received within WithMaxConsumeDuration after message delivery,
 message again
 
 ```go
-WithFetchLimit(limit uint)
+func (q *DelayQueue)WithFetchLimit(limit uint) *DelayQueue
 ```
 
 WithFetchLimit limits the max number of unack (processing) messages
@@ -139,7 +158,7 @@ WARNING! CHANGING(add or remove) this option will cause DelayQueue failing to re
 > see more:  https://redis.io/docs/reference/cluster-spec/#hash-tags
 
 ```go
-WithDefaultRetryCount(count uint)
+WithDefaultRetryCount(count uint)  *DelayQueue
 ```
 
 WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue

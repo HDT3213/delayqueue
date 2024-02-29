@@ -6,11 +6,20 @@ import (
 	"time"
 )
 
-func NewQueue(name string, cli *redis.Client, callback func(string) bool, opts ...interface{}) *DelayQueue {
+
+// NewQueue creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
+// 
+//  queue := delayqueue.NewQueue("example", redisCli, func(payload string) bool {
+//      // callback returns true to confirm successful consumption. 
+//      // If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
+//		return true
+//	})
+// 
+func NewQueue(name string, cli *redis.Client, opts ...interface{}) *DelayQueue {
 	rc := &redisV9Wrapper{
 		inner: cli,
 	}
-	return NewQueue0(name, rc, callback, opts...)
+	return NewQueue0(name, rc, opts...)
 }
 
 func wrapErr(err error) error {
@@ -226,10 +235,10 @@ func (r *redisClusterWrapper) Subscribe(channel string) (<-chan string, func(), 
 	return resultChan, close, nil
 }
 
-func NewQueueOnCluster(name string, cli *redis.ClusterClient, callback func(string) bool, opts ...interface{}) *DelayQueue {
+func NewQueueOnCluster(name string, cli *redis.ClusterClient,  opts ...interface{}) *DelayQueue {
 	rc := &redisClusterWrapper{
 		inner: cli,
 	}
 	opts = append(opts, UseHashTagKey())
-	return NewQueue0(name, rc, callback, opts...)
+	return NewQueue0(name, rc, opts...)
 }
