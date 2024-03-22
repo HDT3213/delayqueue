@@ -2,13 +2,14 @@ package delayqueue
 
 import (
 	"context"
-	"github.com/redis/go-redis/v9"
 	"log"
 	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func TestDelayQueue_consume(t *testing.T) {
@@ -161,6 +162,33 @@ func TestDelayQueue_StopConsume(t *testing.T) {
 			t.Errorf("send message failed: %v", err)
 		}
 	}
+	done := queue.StartConsume()
+	<-done
+}
+
+func TestDelayQueue_AsyncConsume(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	queue := NewQueue("exampleAsync", redisCli, func(payload string) bool {
+		// callback returns true to confirm successful consumption.
+		// If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
+		println(payload)
+		return true
+	}).WithDefaultRetryCount(1)
+
+	// send schedule message
+	go func() {
+		for {
+			time.Sleep(time.Second * 1)
+			err := queue.SendScheduleMsg(time.Now().String(), time.Now().Add(time.Second*2))
+			if err != nil {
+				panic(err)
+			}
+		}
+	}()
+	// start consume
 	done := queue.StartConsume()
 	<-done
 }

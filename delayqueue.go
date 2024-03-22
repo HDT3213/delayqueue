@@ -255,7 +255,7 @@ for _,v in ipairs(msgs) do
 		args2 = {}
 	end
 end
-if (#args2 > 2) then 
+if (#args2 > 0) then 
 	redis.call('LPush', KEYS[2], unpack(args2))
 end
 redis.call('ZRemRangeByScore', KEYS[1], '0', ARGV[1])  -- remove msgs from pending
