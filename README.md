@@ -69,7 +69,7 @@ func main() {
 }
 ```
 
-> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
+> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@redisv8`
 
 > If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
 

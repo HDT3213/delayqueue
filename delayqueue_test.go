@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 )
 
 func TestDelayQueue_consume(t *testing.T) {
