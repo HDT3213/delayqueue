@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/hdt3213/delayqueue"
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 	"strconv"
 	"time"
 )
