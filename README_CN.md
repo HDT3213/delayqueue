@@ -68,6 +68,8 @@ func main() {
 
 > 如果您仍在使用 redis/v8 请使用 v8 分支: `go get github.com/hdt3213/delayqueue@redisv8`
 
+> 请注意 redis/v8 无法兼容 redis cluster 7.x; [详情](https://github.com/redis/go-redis/issues/2085)
+
 > 如果您在使用其他的 redis 客户端, 可以将其包装到 [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) 接口中
 
 > 如果您不想在初始化时设置callback, 您可以使用 WithCallback 函数

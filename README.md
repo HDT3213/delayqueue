@@ -71,6 +71,8 @@ func main() {
 
 > if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@redisv8`
 
+> Please note that redis/v8 is not compatible with redis cluster 7.x. [detail](https://github.com/redis/go-redis/issues/2085)
+
 > If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
 
 > If you don't want to set the callback during initialization, you can use func `WithCallback`.
