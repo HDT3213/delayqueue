@@ -1,7 +1,7 @@
 # DelayQueue
 
 ![license](https://img.shields.io/github/license/HDT3213/delayqueue)
-[![Build Status](https://travis-ci.com/HDT3213/delayqueue.svg?branch=master)](https://app.travis-ci.com/github/HDT3213/delayqueue)
+![Build Status](https://github.com/hdt3213/delayqueue/actions/workflows/coverall.yml/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/HDT3213/delayqueue/badge.svg?branch=master)](https://coveralls.io/github/HDT3213/delayqueue?branch=master)
 [![Go Report Card](https://goreportcard.com/badge/github.com/HDT3213/delayqueue)](https://goreportcard.com/report/github.com/HDT3213/delayqueue)
 [![Go Reference](https://pkg.go.dev/badge/github.com/hdt3213/delayqueue.svg)](https://pkg.go.dev/github.com/hdt3213/delayqueue)
@@ -69,7 +69,9 @@ func main() {
 }
 ```
 
-> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@v8`
+> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@redisv8`
+
+> Please note that redis/v8 is not compatible with redis cluster 7.x. [detail](https://github.com/redis/go-redis/issues/2085)
 
 > If you are using redis client other than go-redis, you could wrap your redis client into [RedisCli](https://pkg.go.dev/github.com/hdt3213/delayqueue#RedisCli) interface
 
