@@ -35,11 +35,15 @@ func TestPublisher(t *testing.T) {
 		}
 	}
 	for i := 0; i < 10*size; i++ {
-		err := queue.consume()
+		ids, err := queue.beforeConsume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
 			return
 		}
+		for _, id := range ids {
+			queue.callback(id)
+		}
+		queue.afterConsume()
 	}
 	for k, v := range deliveryCount {
 		i, _ := strconv.ParseInt(k, 10, 64)

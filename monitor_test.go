@@ -59,7 +59,7 @@ func TestMonitor_get_status(t *testing.T) {
 
 	// test processing count
 	for i := 0; i < size/2; i++ {
-		_ , _ = queue.ready2Unack()
+		_, _ = queue.ready2Unack()
 	}
 	processing, err := monitor.GetProcessingCount()
 	if err != nil {
@@ -109,14 +109,14 @@ func TestMonitor_listener1(t *testing.T) {
 	monitor := NewMonitor("test", redisCli)
 	profile := &MyProfiler{}
 	monitor.ListenEvent(profile)
-	
+
 	for i := 0; i < size; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), 0)
 		if err != nil {
 			t.Error(err)
 		}
 	}
-	queue.consume()
+	queue.beforeConsume()
 
 	if profile.ProduceCount != size {
 		t.Error("wrong produce count")
@@ -143,7 +143,7 @@ func TestMonitor_listener2(t *testing.T) {
 	monitor := NewMonitor("test", redisCli)
 	profile := &MyProfiler{}
 	monitor.ListenEvent(profile)
-	
+
 	for i := 0; i < size; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), 0)
 		if err != nil {
@@ -151,7 +151,7 @@ func TestMonitor_listener2(t *testing.T) {
 		}
 	}
 	for i := 0; i < 3; i++ {
-		queue.consume()
+		queue.beforeConsume()
 	}
 
 	if profile.RetryCount != size {

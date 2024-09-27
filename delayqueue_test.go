@@ -39,11 +39,15 @@ func TestDelayQueue_consume(t *testing.T) {
 		}
 	}
 	for i := 0; i < 10*size; i++ {
-		err := queue.consume()
+		ids, err := queue.beforeConsume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
 			return
 		}
+		for _, id := range ids {
+			queue.callback(id)
+		}
+		queue.afterConsume()
 	}
 	for k, v := range deliveryCount {
 		i, _ := strconv.ParseInt(k, 10, 64)
@@ -88,11 +92,15 @@ func TestDelayQueueOnCluster(t *testing.T) {
 		}
 	}
 	for i := 0; i < 10*size; i++ {
-		err := queue.consume()
+		ids, err := queue.beforeConsume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
 			return
 		}
+		for _, id := range ids {
+			queue.callback(id)
+		}
+		queue.afterConsume()
 	}
 	if succeed != size {
 		t.Error("msg not consumed")
@@ -127,11 +135,15 @@ func TestDelayQueue_ConcurrentConsume(t *testing.T) {
 		}
 	}
 	for i := 0; i < 2*size; i++ {
-		err := queue.consume()
+		ids, err := queue.beforeConsume()
 		if err != nil {
 			t.Errorf("consume error: %v", err)
 			return
 		}
+		for _, id := range ids {
+			queue.callback(id)
+		}
+		queue.afterConsume()
 	}
 	for k, v := range deliveryCount {
 		if v != 1 {
@@ -264,5 +276,68 @@ func TestDelayQueue_Massive_Backlog(t *testing.T) {
 	if int(retryLen) != size {
 		t.Errorf("unack card should be %d", size)
 		return
+	}
+}
+
+
+// consume should stopped after actual fetch count hits fetch limit
+func TestDelayQueue_FetchLimit(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	fetchLimit := 10
+	cb := func(s string) bool {
+		return true
+	}
+	queue := NewQueue("test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithFetchInterval(time.Millisecond * 50).
+		WithMaxConsumeDuration(0).
+		WithLogger(log.New(os.Stderr, "[DelayQueue]", log.LstdFlags)).
+		WithFetchLimit(uint(fetchLimit))
+
+	for i := 0; i < fetchLimit; i++ {
+		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithMsgTTL(time.Hour))
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	// fetch but not consume
+	ids1, err := queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	// send new messages
+	for i := 0; i < fetchLimit; i++ {
+		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithMsgTTL(time.Hour))
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	ids2, err := queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	if len(ids2) > 0 {
+		t.Error("should get 0 message, after hitting fetch limit")
+	}
+	
+	// consume
+	for _, id := range ids1 {
+		queue.callback(id)
+	}
+	queue.afterConsume()
+
+	// resume
+	ids3, err := queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	if len(ids3) == 0 {
+		t.Error("should get some messages, after consumption")
 	}
 }
