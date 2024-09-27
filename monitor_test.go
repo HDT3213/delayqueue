@@ -116,7 +116,15 @@ func TestMonitor_listener1(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	queue.beforeConsume()
+	ids, err := queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	for _, id := range ids {
+		queue.callback(id)
+	}
+	queue.afterConsume()
 
 	if profile.ProduceCount != size {
 		t.Error("wrong produce count")
@@ -151,7 +159,15 @@ func TestMonitor_listener2(t *testing.T) {
 		}
 	}
 	for i := 0; i < 3; i++ {
-		queue.beforeConsume()
+		ids, err := queue.beforeConsume()
+		if err != nil {
+			t.Errorf("consume error: %v", err)
+			return
+		}
+		for _, id := range ids {
+			queue.callback(id)
+		}
+		queue.afterConsume()
 	}
 
 	if profile.RetryCount != size {
