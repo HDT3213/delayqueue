@@ -27,7 +27,7 @@ type DelayQueue struct {
 	garbageKey         string // set: message id
 	useHashTag         bool
 	ticker             *time.Ticker
-	logger             *log.Logger
+	logger             Logger
 	close              chan struct{}
 	running            int32
 	maxConsumeDuration time.Duration // default 5 seconds
@@ -80,6 +80,11 @@ type RedisCli interface {
 	// EvalSha run preload scripts
 	// If there is no preload scripts please return error with message "NOSCRIPT"
 	EvalSha(sha1 string, keys []string, args []interface{}) (interface{}, error)
+}
+
+// Logger is an abstraction of logging system
+type Logger interface {
+	Printf(format string, v ...interface{})
 }
 
 type hashTagKeyOpt int
@@ -153,7 +158,7 @@ func (q *DelayQueue) WithCallback(callback CallbackFunc) *DelayQueue {
 }
 
 // WithLogger customizes logger for queue
-func (q *DelayQueue) WithLogger(logger *log.Logger) *DelayQueue {
+func (q *DelayQueue) WithLogger(logger Logger) *DelayQueue {
 	q.logger = logger
 	return q
 }

@@ -92,6 +92,8 @@ func producer() {
 
 ## 选项
 
+### 回调函数
+
 ```go
 func (q *DelayQueue)WithCallback(callback CallbackFunc) *DelayQueue
 ```
@@ -107,12 +109,21 @@ queue.WithCallback(func(payload string) bool {
 })
 ```
 
+### 日志
+
 ```go
 func (q *DelayQueue)WithLogger(logger *log.Logger) *DelayQueue
 ```
 
-为 DelayQueue 设置 logger
+为 DelayQueue 设置 logger, logger 需要实现下面的接口：
 
+```go
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+```
+
+### 并发数
 
 ```go
 func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue 
@@ -120,11 +131,15 @@ func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue
 
 设置消费者并发数
 
+### 轮询间隔
+
 ```go
 func (q *DelayQueue)WithFetchInterval(d time.Duration) *DelayQueue
 ```
 
 设置消费者从 Redis 拉取消息的时间间隔
+
+### 消费超时
 
 ```go
 func (q *DelayQueue)WithMaxConsumeDuration(d time.Duration) *DelayQueue
@@ -132,11 +147,15 @@ func (q *DelayQueue)WithMaxConsumeDuration(d time.Duration) *DelayQueue
 
 设置最长消费时间。若拉取消息后超出 MaxConsumeDuration 时限仍未返回 ACK 则认为消费失败，DelayQueue 会重新投递此消息。
 
+### 最大处理中消息数
+
 ```go
 func (q *DelayQueue)WithFetchLimit(limit uint) *DelayQueue
 ```
 
-FetchLimit 限制消费者从 Redis 中拉取的消息数目，即单个消费者正在处理中的消息数不会超过 FetchLimit
+单个消费者正在处理中的消息数不会超过 FetchLimit
+
+### 启用 HashTag
 
 ```go
 UseHashTagKey()
@@ -150,6 +169,8 @@ UseHashTagKey() 会在 Redis Key 上添加 hash tag 确保同一个队列的所�
 
 see more: https://redis.io/docs/reference/cluster-spec/#hash-tags
 
+### 设置默认重试次数
+
 ```go
 WithDefaultRetryCount(count uint)
 ```
@@ -157,6 +178,12 @@ WithDefaultRetryCount(count uint)
 设置队列中消息的默认重试次数。
 
 在调用  DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 发送消息时，可以调用 WithRetryCount 为这条消息单独指定重试次数。
+
+```go
+queue.SendDelayMsg(msg, time.Hour, delayqueue.WithRetryCount(3))
+```
+
+### 预加载脚本
 
 ```go
 (q *DelayQueue) WithScriptPreload(flag bool) *DelayQueue

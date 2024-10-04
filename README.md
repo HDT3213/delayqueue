@@ -97,6 +97,8 @@ func producer() {
 
 ## Options
 
+### Consume Function
+
 ```go
 func (q *DelayQueue)WithCallback(callback CallbackFunc) *DelayQueue
 ```
@@ -113,12 +115,21 @@ queue.WithCallback(func(payload string) bool {
 })
 ```
 
+### Logger
+
 ```go
-func (q *DelayQueue)WithLogger(logger *log.Logger) *DelayQueue
+func (q *DelayQueue)WithLogger(logger Logger) *DelayQueue
 ```
 
-WithLogger customizes logger for queue
+WithLogger customizes logger for queue. Logger should implemented the following interface:
 
+```go
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+```
+
+### Concurrent
 
 ```go
 func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue
@@ -126,11 +137,15 @@ func (q *DelayQueue)WithConcurrent(c uint) *DelayQueue
 
 WithConcurrent sets the number of concurrent consumers
 
+### Polling Interval
+
 ```go
 func (q *DelayQueue)WithFetchInterval(d time.Duration) *DelayQueue
 ```
 
 WithFetchInterval customizes the interval at which consumer fetch message from redis
+
+### Timeout
 
 ```go
 func (q *DelayQueue)WithMaxConsumeDuration(d time.Duration) *DelayQueue
@@ -141,11 +156,15 @@ WithMaxConsumeDuration customizes max consume duration
 If no acknowledge received within WithMaxConsumeDuration after message delivery, DelayQueue will try to deliver this
 message again
 
+### Max Processing Limit
+
 ```go
 func (q *DelayQueue)WithFetchLimit(limit uint) *DelayQueue
 ```
 
 WithFetchLimit limits the max number of unack (processing) messages
+
+### Hash Tag
 
 ```go
 UseHashTagKey()
@@ -159,6 +178,8 @@ WARNING! CHANGING(add or remove) this option will cause DelayQueue failing to re
 
 > see more:  https://redis.io/docs/reference/cluster-spec/#hash-tags
 
+### Default Retry Count
+
 ```go
 WithDefaultRetryCount(count uint)  *DelayQueue
 ```
@@ -166,6 +187,12 @@ WithDefaultRetryCount(count uint)  *DelayQueue
 WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue
 
 use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
+
+```go
+queue.SendDelayMsg(msg, time.Hour, delayqueue.WithRetryCount(3))
+```
+
+### Script Preload
 
 ```go
 (q *DelayQueue) WithScriptPreload(flag bool) *DelayQueue
