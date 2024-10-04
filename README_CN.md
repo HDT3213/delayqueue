@@ -23,7 +23,7 @@ DelayQueue 的主要优势：
 go get github.com/hdt3213/delayqueue
 ```
 
-> 如果您仍在使用 `github.com/go-redis/redis/v8` 请安装 `go get github.com/hdt3213/delayqueue@v8`
+> 如果您仍在使用 `github.com/go-redis/redis/v8` 请安装 `go get github.com/hdt3213/delayqueue@redisv8`
 
 ## 开始使用
 
@@ -157,6 +157,14 @@ WithDefaultRetryCount(count uint)
 设置队列中消息的默认重试次数。
 
 在调用  DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 发送消息时，可以调用 WithRetryCount 为这条消息单独指定重试次数。
+
+```go
+(q *DelayQueue) WithScriptPreload(flag bool) *DelayQueue
+```
+
+WithScriptPreload(true) 会让 delayqueue 预上传脚本并使用 EvalSha 命令调用脚本，WithScriptPreload(false) 会让 delayqueue 使用 Eval 命令运行脚本。
+
+ScriptPreload 默认值为 true.
 
 ## 监控
 

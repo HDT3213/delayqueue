@@ -132,6 +132,18 @@ func (r *redisV9Wrapper) Subscribe(channel string) (<-chan string, func(), error
 	return resultChan, close, nil
 }
 
+func (r *redisV9Wrapper) EvalSha(sha1 string, keys []string, args []interface{}) (interface{}, error) {
+	ctx := context.Background()
+	ret, err := r.inner.EvalSha(ctx, sha1, keys, args...).Result()
+	return ret, wrapErr(err)
+}
+
+func (r *redisV9Wrapper) ScriptLoad(script string) (string, error) {
+	ctx := context.Background()
+	sha1, err := r.inner.ScriptLoad(ctx, script).Result()
+	return sha1, wrapErr(err)
+}
+
 type redisClusterWrapper struct {
 	inner *redis.ClusterClient
 }
@@ -233,6 +245,18 @@ func (r *redisClusterWrapper) Subscribe(channel string) (<-chan string, func(), 
 	}()
 	
 	return resultChan, close, nil
+}
+
+func (r *redisClusterWrapper) EvalSha(sha1 string, keys []string, args []interface{}) (interface{}, error) {
+	ctx := context.Background()
+	ret, err := r.inner.EvalSha(ctx, sha1, keys, args...).Result()
+	return ret, wrapErr(err)
+}
+
+func (r *redisClusterWrapper) ScriptLoad(script string) (string, error) {
+	ctx := context.Background()
+	sha1, err := r.inner.ScriptLoad(ctx, script).Result()
+	return sha1, wrapErr(err)
 }
 
 func NewQueueOnCluster(name string, cli *redis.ClusterClient,  opts ...interface{}) *DelayQueue {

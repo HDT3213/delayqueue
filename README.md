@@ -24,9 +24,11 @@ Core Advantages:
 
 DelayQueue requires a Go version with modules support. Run following command line in your project with go.mod:
 
-```
+```bash
 go get github.com/hdt3213/delayqueue
 ```
+
+> if you are using `github.com/go-redis/redis/v8` please use `go get github.com/hdt3213/delayqueue@redisv8`
 
 ## Get Started
 
@@ -68,8 +70,6 @@ func main() {
 	<-done
 }
 ```
-
-> if you are using github.com/go-redis/redis/v8 please use `go get github.com/hdt3213/delayqueue@redisv8`
 
 > Please note that redis/v8 is not compatible with redis cluster 7.x. [detail](https://github.com/redis/go-redis/issues/2085)
 
@@ -166,6 +166,12 @@ WithDefaultRetryCount(count uint)  *DelayQueue
 WithDefaultRetryCount customizes the max number of retry, it effects of messages in this queue
 
 use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
+
+```go
+(q *DelayQueue) WithScriptPreload(flag bool) *DelayQueue
+```
+
+WithScriptPreload(true) makes DelayQueue preload scripts and call them using EvalSha to reduce communication costs. WithScriptPreload(false) makes DelayQueue run scripts by Eval commnand. Using preload and EvalSha by Default
 
 ## Monitoring
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,7 +37,9 @@ type DelayQueue struct {
 	fetchLimit         uint          // default no limit
 	fetchCount         int32         // actually running task number
 	concurrent         uint          // default 1, executed serially
-
+	sha1map            map[string]string
+	sha1mapMu          *sync.RWMutex
+	scriptPreload      bool
 	// for batch consume
 	consumeBuffer chan string
 
@@ -70,6 +74,12 @@ type RedisCli interface {
 	// Subscribe used for monitor only
 	// returns: payload channel, subscription closer, error; the subscription closer should close payload channel as well
 	Subscribe(channel string) (payloads <-chan string, close func(), err error)
+
+	// ScriptLoad call `script load` command
+	ScriptLoad(script string) (string, error)
+	// EvalSha run preload scripts
+	// If there is no preload scripts please return error with message "NOSCRIPT"
+	EvalSha(sha1 string, keys []string, args []interface{}) (interface{}, error)
 }
 
 type hashTagKeyOpt int
@@ -129,6 +139,9 @@ func NewQueue0(name string, cli RedisCli, opts ...interface{}) *DelayQueue {
 		defaultRetryCount:  3,
 		fetchInterval:      time.Second,
 		concurrent:         1,
+		sha1map:            make(map[string]string),
+		sha1mapMu:          &sync.RWMutex{},
+		scriptPreload:      true,
 	}
 }
 
@@ -148,6 +161,12 @@ func (q *DelayQueue) WithLogger(logger *log.Logger) *DelayQueue {
 // WithFetchInterval customizes the interval at which consumer fetch message from redis
 func (q *DelayQueue) WithFetchInterval(d time.Duration) *DelayQueue {
 	q.fetchInterval = d
+	return q
+}
+
+// WithScriptPreload use script load command preload scripts to redis
+func (q *DelayQueue) WithScriptPreload(flag bool) *DelayQueue {
+	q.scriptPreload = flag
 	return q
 }
 
@@ -245,6 +264,48 @@ func (q *DelayQueue) SendDelayMsg(payload string, duration time.Duration, opts .
 	return q.SendScheduleMsg(payload, t, opts...)
 }
 
+func (q *DelayQueue) loadScript(script string) (string, error) {
+	sha1, err := q.redisCli.ScriptLoad(script)
+	if err != nil {
+		return "", err
+	}
+	q.sha1mapMu.Lock()
+	q.sha1map[script] = sha1
+	q.sha1mapMu.Unlock()
+	return sha1, nil
+}
+
+func (q *DelayQueue) eval(script string, keys []string, args []interface{}) (interface{}, error) {
+	if !q.scriptPreload {
+		return q.redisCli.Eval(script, keys, args)
+	}
+	var err error
+	q.sha1mapMu.RLock()
+	sha1, ok := q.sha1map[script]
+	q.sha1mapMu.RUnlock()
+	if !ok {
+		sha1, err = q.loadScript(script)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := q.redisCli.EvalSha(sha1, keys, args)
+	if err == nil {
+		return result, err
+	}
+	// script not loaded, reload it
+	// It is possible to access a node in the cluster that has no pre-loaded scripts.
+	if strings.HasPrefix(err.Error(), "NOSCRIPT") {
+		sha1, err = q.loadScript(script)
+		if err != nil {
+			return nil, err
+		}
+		// try again
+		result, err = q.redisCli.EvalSha(sha1, keys, args)
+	}
+	return result, err
+}
+
 // pending2ReadyScript atomically moves messages from pending to ready
 // keys: pendingKey, readyKey
 // argv: currentTime
@@ -270,7 +331,7 @@ return #msgs
 func (q *DelayQueue) pending2Ready() error {
 	now := time.Now().Unix()
 	keys := []string{q.pendingKey, q.readyKey}
-	raw, err := q.redisCli.Eval(pending2ReadyScript, keys, []interface{}{now})
+	raw, err := q.eval(pending2ReadyScript, keys, []interface{}{now})
 	if err != nil && err != NilErr {
 		return fmt.Errorf("pending2ReadyScript failed: %v", err)
 	}
@@ -294,7 +355,7 @@ return msg
 func (q *DelayQueue) ready2Unack() (string, error) {
 	retryTime := time.Now().Add(q.maxConsumeDuration).Unix()
 	keys := []string{q.readyKey, q.unAckKey}
-	ret, err := q.redisCli.Eval(ready2UnackScript, keys, []interface{}{retryTime})
+	ret, err := q.eval(ready2UnackScript, keys, []interface{}{retryTime})
 	if err == NilErr {
 		return "", err
 	}
@@ -312,7 +373,7 @@ func (q *DelayQueue) ready2Unack() (string, error) {
 func (q *DelayQueue) retry2Unack() (string, error) {
 	retryTime := time.Now().Add(q.maxConsumeDuration).Unix()
 	keys := []string{q.retryKey, q.unAckKey}
-	ret, err := q.redisCli.Eval(ready2UnackScript, keys, []interface{}{retryTime, q.retryKey, q.unAckKey})
+	ret, err := q.eval(ready2UnackScript, keys, []interface{}{retryTime, q.retryKey, q.unAckKey})
 	if err == NilErr {
 		return "", NilErr
 	}
@@ -429,7 +490,7 @@ return {retryMsgs, failMsgs}
 func (q *DelayQueue) unack2Retry() error {
 	keys := []string{q.unAckKey, q.retryCountKey, q.retryKey, q.garbageKey}
 	now := time.Now()
-	raw, err := q.redisCli.Eval(unack2RetryScript, keys, []interface{}{now.Unix()})
+	raw, err := q.eval(unack2RetryScript, keys, []interface{}{now.Unix()})
 	if err != nil && err != NilErr {
 		return fmt.Errorf("unack to retry script failed: %v", err)
 	}
@@ -545,9 +606,9 @@ func (q *DelayQueue) assertNotRunning() {
 	}
 }
 
-func (q *DelayQueue)goWithRecover(fn func()) {
-	go func ()  {
-		defer func ()  {
+func (q *DelayQueue) goWithRecover(fn func()) {
+	go func() {
+		defer func() {
 			if err := recover(); err != nil {
 				q.logger.Printf("panic: %v\n", err)
 			}
