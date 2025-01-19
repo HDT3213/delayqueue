@@ -674,7 +674,6 @@ func (q *DelayQueue) StopConsume() {
 	if q.ticker != nil {
 		q.ticker.Stop()
 	}
-	close(q.consumeBuffer)
 }
 
 // GetPendingCount returns the number of pending messages
