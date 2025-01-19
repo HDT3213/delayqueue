@@ -183,6 +183,15 @@ WithDefaultRetryCount(count uint)
 queue.SendDelayMsg(msg, time.Hour, delayqueue.WithRetryCount(3))
 ```
 
+### 设置 nack 后重试间隔
+
+```go
+WithNackRedeliveryDelay(d time.Duration) *DelayQueue
+```
+
+WithNackRedeliveryDelay 可以设置 nack (callback 函数返回 false) 之后到重新投递的间隔。
+但是如果消费超时，消息会被立即重新投递。
+
 ### 预加载脚本
 
 ```go

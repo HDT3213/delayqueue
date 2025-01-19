@@ -192,6 +192,15 @@ use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg 
 queue.SendDelayMsg(msg, time.Hour, delayqueue.WithRetryCount(3))
 ```
 
+### Nack Redelivery Delay
+
+```go
+WithNackRedeliveryDelay(d time.Duration) *DelayQueue
+```
+
+WithNackRedeliveryDelay customizes the interval between redelivery and nack (callback returns false) 
+But if consumption exceeded deadline, the message will be redelivered immediately.
+
 ### Script Preload
 
 ```go

@@ -43,7 +43,8 @@ type DelayQueue struct {
 	// for batch consume
 	consumeBuffer chan string
 
-	eventListener EventListener
+	eventListener       EventListener
+	nackRedeliveryDelay time.Duration
 }
 
 // NilErr represents redis nil
@@ -202,6 +203,13 @@ func (q *DelayQueue) WithConcurrent(c uint) *DelayQueue {
 // use WithRetryCount during DelayQueue.SendScheduleMsg or DelayQueue.SendDelayMsg to specific retry count of particular message
 func (q *DelayQueue) WithDefaultRetryCount(count uint) *DelayQueue {
 	q.defaultRetryCount = count
+	return q
+}
+
+// WithNackRedeliveryDelay customizes the interval between redelivery and nack (callback returns false) 
+// If consumption exceeded deadline, the message will be redelivered immediately
+func (q *DelayQueue) WithNackRedeliveryDelay(d time.Duration) *DelayQueue {
+	q.nackRedeliveryDelay = d
 	return q
 }
 
@@ -427,7 +435,7 @@ func (q *DelayQueue) nack(idStr string) error {
 	atomic.AddInt32(&q.fetchCount, -1)
 	// update retry time as now, unack2Retry will move it to retry immediately
 	err := q.redisCli.ZAdd(q.unAckKey, map[string]float64{
-		idStr: float64(time.Now().Unix()),
+		idStr: float64(time.Now().Add(q.nackRedeliveryDelay).Unix()),
 	})
 	if err != nil {
 		return fmt.Errorf("negative ack failed: %v", err)

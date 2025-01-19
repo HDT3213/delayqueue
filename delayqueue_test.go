@@ -30,7 +30,8 @@ func TestDelayQueue_consume(t *testing.T) {
 		WithFetchInterval(time.Millisecond * 50).
 		WithMaxConsumeDuration(0).
 		WithLogger(log.New(os.Stderr, "[DelayQueue]", log.LstdFlags)).
-		WithFetchLimit(2)
+		WithFetchLimit(2).
+		WithNackRedeliveryDelay(time.Second)
 
 	for i := 0; i < size; i++ {
 		err := queue.SendDelayMsg(strconv.Itoa(i), 0, WithRetryCount(retryCount), WithMsgTTL(time.Hour))
