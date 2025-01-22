@@ -3,7 +3,7 @@ package delayqueue
 import (
 	"log"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 )
 
 // Monitor can get running status and events of DelayQueue
@@ -20,7 +20,7 @@ func NewMonitor0(name string, cli RedisCli, opts ...interface{}) *Monitor {
 
 // NewPublisher creates a new Publisher by a *redis.Client
 func NewMonitor(name string, cli *redis.Client, opts ...interface{}) *Monitor {
-	rc := &redisV9Wrapper{
+	rc := &redisV8Wrapper{
 		inner: cli,
 	}
 	return NewMonitor0(name, rc, opts...)
@@ -68,4 +68,3 @@ func (m *Monitor) ListenEvent(listener EventListener) (func(), error) {
 	}()
 	return closer, nil
 }
-

@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	"github.com/go-redis/redis/v8"
 )
 
 // Publisher only publishes messages to delayqueue, it is a encapsulation of delayqueue
@@ -21,7 +21,7 @@ func NewPublisher0(name string, cli RedisCli, opts ...interface{}) *Publisher {
 
 // NewPublisher creates a new Publisher by a *redis.Client
 func NewPublisher(name string, cli *redis.Client, opts ...interface{}) *Publisher {
-	rc := &redisV9Wrapper{
+	rc := &redisV8Wrapper{
 		inner: cli,
 	}
 	return NewPublisher0(name, rc, opts...)

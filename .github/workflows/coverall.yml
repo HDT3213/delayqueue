@@ -5,9 +5,9 @@ name: Go
 
 on:
   push:
-    branches: [ "master", "github-actions" ]
+    branches: [ "master", "github-actions", "redisv8" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "redisv8" ]
   workflow_dispatch:
 
 
