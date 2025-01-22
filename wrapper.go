@@ -44,6 +44,15 @@ func (r *redisV9Wrapper) Set(key string, value string, expiration time.Duration)
 	return wrapErr(r.inner.Set(ctx, key, value, expiration).Err())
 }
 
+func (r *redisV9Wrapper) LRem(key string, count int64, value string) (int64, error) {
+	ctx := context.Background()
+	count, err := r.inner.LRem(ctx, key, count, value).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return count, nil
+}
+
 func (r *redisV9Wrapper) Get(key string) (string, error) {
 	ctx := context.Background()
 	ret, err := r.inner.Get(ctx, key).Result()
@@ -92,18 +101,31 @@ func (r *redisV9Wrapper) ZAdd(key string, values map[string]float64) error {
 	return wrapErr(r.inner.ZAdd(ctx, key, zs...).Err())
 }
 
-func (r *redisV9Wrapper) ZRem(key string, members []string) error {
+func (r *redisV9Wrapper) ZRem(key string, members []string) (int64, error) {
 	ctx := context.Background()
 	members2 := make([]interface{}, len(members))
 	for i, v := range members {
 		members2[i] = v
 	}
-	return wrapErr(r.inner.ZRem(ctx, key, members2...).Err())
+	removed, err := r.inner.ZRem(ctx, key, members2...).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return removed, nil
 }
 
 func (r *redisV9Wrapper) ZCard(key string) (int64, error) {
 	ctx := context.Background()
 	return r.inner.ZCard(ctx, key).Result()
+}
+
+func (r *redisV9Wrapper) ZScore(key string, member string) (float64, error) {
+	ctx := context.Background()
+	v, err := r.inner.ZScore(ctx, key, member).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return v, nil
 }
 
 func (r *redisV9Wrapper) LLen(key string) (int64, error) {
@@ -207,13 +229,17 @@ func (r *redisClusterWrapper) ZAdd(key string, values map[string]float64) error 
 	return wrapErr(r.inner.ZAdd(ctx, key, zs...).Err())
 }
 
-func (r *redisClusterWrapper) ZRem(key string, members []string) error {
+func (r *redisClusterWrapper) ZRem(key string, members []string) (int64, error) {
 	ctx := context.Background()
 	members2 := make([]interface{}, len(members))
 	for i, v := range members {
 		members2[i] = v
 	}
-	return wrapErr(r.inner.ZRem(ctx, key, members2...).Err())
+	removed, err := r.inner.ZRem(ctx, key, members2...).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return removed, nil
 }
 
 func (r *redisClusterWrapper) ZCard(key string) (int64, error) {
@@ -221,9 +247,27 @@ func (r *redisClusterWrapper) ZCard(key string) (int64, error) {
 	return r.inner.ZCard(ctx, key).Result()
 }
 
+func (r *redisClusterWrapper) ZScore(key string, member string) (float64, error) {
+	ctx := context.Background()
+	v, err := r.inner.ZScore(ctx, key, member).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return v, nil
+}
+
 func (r *redisClusterWrapper) LLen(key string) (int64, error) {
 	ctx := context.Background()
 	return r.inner.LLen(ctx, key).Result()
+}
+
+func (r *redisClusterWrapper) LRem(key string, count int64, value string) (int64, error) {
+	ctx := context.Background()
+	count, err := r.inner.LRem(ctx, key, count, value).Result()
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return count, nil
 }
 
 func (r *redisClusterWrapper) Publish(channel string, payload string) error {

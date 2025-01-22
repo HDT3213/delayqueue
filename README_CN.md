@@ -48,14 +48,14 @@ func main() {
 	}).WithConcurrent(4) // 设置消费者并发数
 	// 发送延时投递消息
 	for i := 0; i < 10; i++ {
-		err := queue.SendDelayMsg(strconv.Itoa(i), time.Hour, delayqueue.WithRetryCount(3))
+		_, err := queue.SendDelayMsgV2(strconv.Itoa(i), time.Hour, delayqueue.WithRetryCount(3))
 		if err != nil {
 			panic(err)
 		}
 	}
 	// 发送定时投递消息
 	for i := 0; i < 10; i++ {
-		err := queue.SendScheduleMsg(strconv.Itoa(i), time.Now().Add(time.Hour))
+		_, err := queue.SendScheduleMsg(strconv.Itoa(i), time.Now().Add(time.Hour))
 		if err != nil {
 			panic(err)
 		}
@@ -89,6 +89,30 @@ func producer() {
 	publisher.SendDelayMsg(strconv.Itoa(i), 0)
 }
 ```
+
+## 拦截消息/删除消息
+
+```go
+msg, err := queue.SendScheduleMsgV2(strconv.Itoa(i), time.Now().Add(time.Second))
+if err != nil {
+	panic(err)
+}
+result, err := queue.TryIntercept(msg)
+if err != nil {
+	panic(err)
+}
+if result.Intercepted {
+	println("拦截成功!")
+} else {
+	println("拦截失败，消息已被消费!")
+}
+```
+
+`SendScheduleMsgV2` 和 `SendDelayMsgV2` 返回一个可以跟踪消息的结构体。然后将其传递给 `TryIntercept` 就可以尝试拦截消息的消费。
+
+如果消息处于待处理状态(pending)或等待消费(ready)，则可以成功拦截。如果消息已被消费或正在等待重试，则无法拦截，但 TryIntercept 将阻止后续重试。
+
+TryIntercept 返回一个 InterceptResult，其中的 Intercepted 字段会表示拦截是否成功。
 
 ## 选项
 

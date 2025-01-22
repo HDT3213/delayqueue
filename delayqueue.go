@@ -66,9 +66,11 @@ type RedisCli interface {
 	SMembers(key string) ([]string, error)
 	SRem(key string, members []string) error
 	ZAdd(key string, values map[string]float64) error
-	ZRem(key string, fields []string) error
+	ZRem(key string, fields []string) (int64, error)
 	ZCard(key string) (int64, error)
+	ZScore(key string, member string) (float64, error)
 	LLen(key string) (int64, error)
+	LRem(key string, count int64, value string) (int64, error)
 
 	// Publish used for monitor only
 	Publish(channel string, payload string) error
@@ -206,7 +208,7 @@ func (q *DelayQueue) WithDefaultRetryCount(count uint) *DelayQueue {
 	return q
 }
 
-// WithNackRedeliveryDelay customizes the interval between redelivery and nack (callback returns false) 
+// WithNackRedeliveryDelay customizes the interval between redelivery and nack (callback returns false)
 // If consumption exceeded deadline, the message will be redelivered immediately
 func (q *DelayQueue) WithNackRedeliveryDelay(d time.Duration) *DelayQueue {
 	q.nackRedeliveryDelay = d
@@ -236,8 +238,25 @@ func WithMsgTTL(d time.Duration) interface{} {
 	return msgTTLOpt(d)
 }
 
-// SendScheduleMsg submits a message delivered at given time
-func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interface{}) error {
+// MessageInfo stores information to trace a message
+type MessageInfo struct {
+	id string
+}
+
+func (msg *MessageInfo) ID() string {
+	return msg.id
+}
+
+const (
+	StatePending    = "pending"
+	StateReady      = "ready"
+	StateReadyRetry = "ready_to_retry"
+	StateConsuming  = "consuming"
+	StateUnknown    = "unknown"
+)
+
+// SendScheduleMsgV2 submits a message delivered at given time
+func (q *DelayQueue) SendScheduleMsgV2(payload string, t time.Time, opts ...interface{}) (*MessageInfo, error) {
 	// parse options
 	retryCount := q.defaultRetryCount
 	for _, opt := range opts {
@@ -255,26 +274,88 @@ func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interf
 	msgTTL := t.Sub(now) + q.msgTTL // delivery + q.msgTTL
 	err := q.redisCli.Set(q.genMsgKey(idStr), payload, msgTTL)
 	if err != nil {
-		return fmt.Errorf("store msg failed: %v", err)
+		return nil, fmt.Errorf("store msg failed: %v", err)
 	}
 	// store retry count
 	err = q.redisCli.HSet(q.retryCountKey, idStr, strconv.Itoa(int(retryCount)))
 	if err != nil {
-		return fmt.Errorf("store retry count failed: %v", err)
+		return nil, fmt.Errorf("store retry count failed: %v", err)
 	}
 	// put to pending
 	err = q.redisCli.ZAdd(q.pendingKey, map[string]float64{idStr: float64(t.Unix())})
 	if err != nil {
-		return fmt.Errorf("push to pending failed: %v", err)
+		return nil, fmt.Errorf("push to pending failed: %v", err)
 	}
 	q.reportEvent(NewMessageEvent, 1)
-	return nil
+	return &MessageInfo{
+		id: idStr,
+	}, nil
 }
 
 // SendDelayMsg submits a message delivered after given duration
+func (q *DelayQueue) SendDelayMsgV2(payload string, duration time.Duration, opts ...interface{}) (*MessageInfo, error) {
+	t := time.Now().Add(duration)
+	return q.SendScheduleMsgV2(payload, t, opts...)
+}
+
+// SendScheduleMsg submits a message delivered at given time
+// It is compatible with SendScheduleMsgV2, but does not return MessageInfo
+func (q *DelayQueue) SendScheduleMsg(payload string, t time.Time, opts ...interface{}) error {
+	_, err := q.SendScheduleMsgV2(payload, t, opts...)
+	return err
+}
+
+// SendDelayMsg submits a message delivered after given duration
+// It is compatible with SendDelayMsgV2, but does not return MessageInfo
 func (q *DelayQueue) SendDelayMsg(payload string, duration time.Duration, opts ...interface{}) error {
 	t := time.Now().Add(duration)
 	return q.SendScheduleMsg(payload, t, opts...)
+}
+
+type InterceptResult struct {
+	Intercepted bool
+	State       string
+}
+
+// TryIntercept trys to intercept a message
+func (q *DelayQueue) TryIntercept(msg *MessageInfo) (*InterceptResult, error) {
+	id := msg.ID()
+	// try to intercept at ready
+	removed, err := q.redisCli.LRem(q.readyKey, 0, id)
+	if err != nil {
+		q.logger.Printf("intercept %s from ready failed: %v", id, err)
+	}
+	if removed > 0 {
+		_ = q.redisCli.Del([]string{q.genMsgKey(id)})
+		_ = q.redisCli.HDel(q.retryCountKey, []string{id})
+		return &InterceptResult{
+			Intercepted: true,
+			State:       StateReady,
+		}, nil
+	}	
+	// try to intercept at pending
+	removed, err = q.redisCli.ZRem(q.pendingKey, []string{id})
+	if err != nil {
+		q.logger.Printf("intercept %s from pending failed: %v", id, err)
+	}
+	if removed > 0 {
+		_ = q.redisCli.Del([]string{q.genMsgKey(id)})
+		_ = q.redisCli.HDel(q.retryCountKey, []string{id})
+		return &InterceptResult{
+			Intercepted: true,
+			State:       StatePending,
+		}, nil
+	}
+	// message may be being consumed or has been successfully consumed
+	// if the message has been successfully consumed, the following action will cause nothing
+	// if the message is being consumed，the following action will prevent it from being retried
+	q.redisCli.HDel(q.retryCountKey, []string{id}) 
+	q.redisCli.LRem(q.retryKey, 0, id)
+
+	return &InterceptResult{
+		Intercepted: false,
+		State:       StateUnknown,
+	}, nil
 }
 
 func (q *DelayQueue) loadScript(script string) (string, error) {
@@ -420,7 +501,7 @@ func (q *DelayQueue) callback(idStr string) error {
 
 func (q *DelayQueue) ack(idStr string) error {
 	atomic.AddInt32(&q.fetchCount, -1)
-	err := q.redisCli.ZRem(q.unAckKey, []string{idStr})
+	_, err := q.redisCli.ZRem(q.unAckKey, []string{idStr})
 	if err != nil {
 		return fmt.Errorf("remove from unack failed: %v", err)
 	}

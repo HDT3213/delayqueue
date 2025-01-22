@@ -53,14 +53,14 @@ func main() {
 	}).WithConcurrent(4) // set the number of concurrent consumers 
 	// send delay message
 	for i := 0; i < 10; i++ {
-		err := queue.SendDelayMsg(strconv.Itoa(i), time.Hour, delayqueue.WithRetryCount(3))
+		_, err := queue.SendDelayMsgV2(strconv.Itoa(i), time.Hour, delayqueue.WithRetryCount(3))
 		if err != nil {
 			panic(err)
 		}
 	}
 	// send schedule message
 	for i := 0; i < 10; i++ {
-		err := queue.SendScheduleMsg(strconv.Itoa(i), time.Now().Add(time.Hour))
+		_, err := queue.SendScheduleMsgV2(strconv.Itoa(i), time.Now().Add(time.Hour))
 		if err != nil {
 			panic(err)
 		}
@@ -70,6 +70,8 @@ func main() {
 	<-done
 }
 ```
+
+> `SendScheduleMsgV2` (`SendDelayMsgV2`) is fully compatible with `SendScheduleMsg` (`SendDelayMsg`)
 
 > Please note that redis/v8 is not compatible with redis cluster 7.x. [detail](https://github.com/redis/go-redis/issues/2085)
 
@@ -94,6 +96,30 @@ func producer() {
 	publisher.SendDelayMsg(strconv.Itoa(i), 0)
 }
 ```
+
+## Intercept/Delete Messages
+
+```go
+msg, err := queue.SendScheduleMsgV2(strconv.Itoa(i), time.Now().Add(time.Second))
+if err != nil {
+	panic(err)
+}
+result, err := queue.TryIntercept(msg)
+if err != nil {
+	panic(err)
+}
+if result.Intercepted {
+	println("interception success!")
+} else {
+	println("interception failed, message has been consumed!")
+}
+```
+
+`SendScheduleMsgV2` and `SendDelayMsgV2` return a structure which contains message tracking information.Then passing it to `TryIntercept` to try to intercept the consumption of the message.
+
+If the message is pending or waiting to consume the interception will succeed.If the message has been consumed or is awaiting retry, the interception will fail, but TryIntercept will prevent subsequent retries.
+
+TryIntercept returns a InterceptResult, which Intercepted field indicates whether it is successful.
 
 ## Options
 

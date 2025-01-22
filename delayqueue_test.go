@@ -445,3 +445,84 @@ func TestDelayQueue_NackRedeliveryDelay(t *testing.T) {
 		return
 	}
 }
+
+func TestDelayQueue_TryIntercept(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	cb := func(s string) bool {
+		return false
+	}
+	queue := NewQueue("test", redisCli, cb).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(time.Minute)
+
+	// intercept pending message
+	msg, err := queue.SendDelayMsgV2("foobar", time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	result, err := queue.TryIntercept(msg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !result.Intercepted {
+		t.Error("expect intercepted")
+	}
+
+	// intercept ready message
+	msg, err = queue.SendScheduleMsgV2("foobar2", time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = queue.pending2Ready()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	result, err = queue.TryIntercept(msg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !result.Intercepted {
+		t.Error("expect intercepted")
+	}
+
+	// prevent from retry
+	msg, err = queue.SendScheduleMsgV2("foobar3", time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	ids, err := queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	for _, id := range ids {
+		queue.nack(id)
+	}
+	queue.afterConsume()
+	result, err = queue.TryIntercept(msg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if result.Intercepted {
+		t.Error("expect not intercepted")
+		return
+	}
+	ids, err = queue.beforeConsume()
+	if err != nil {
+		t.Errorf("consume error: %v", err)
+		return
+	}
+	if len(ids) > 0 {
+		t.Error("expect empty messages")
+	}
+}

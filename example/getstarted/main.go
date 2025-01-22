@@ -19,14 +19,14 @@ func main() {
 	}).WithConcurrent(4)
 	// send delay message
 	for i := 0; i < 10; i++ {
-		err := queue.SendDelayMsg(strconv.Itoa(i), time.Second, delayqueue.WithRetryCount(3))
+		_, err := queue.SendDelayMsgV2(strconv.Itoa(i), time.Second, delayqueue.WithRetryCount(3))
 		if err != nil {
 			panic(err)
 		}
 	}
 	// send schedule message
 	for i := 0; i < 10; i++ {
-		err := queue.SendScheduleMsg(strconv.Itoa(i), time.Now().Add(time.Second))
+		_, err := queue.SendScheduleMsgV2(strconv.Itoa(i), time.Now().Add(time.Second))
 		if err != nil {
 			panic(err)
 		}
