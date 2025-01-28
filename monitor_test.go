@@ -97,7 +97,7 @@ func TestMonitor_Cluster_GetStatus(t *testing.T) {
 	}
 
 	// test pengding count
-	pending, err := monitor.GetPendingCount()
+	_, err := monitor.GetPendingCount()
 	if err != nil {
 		t.Error(err)
 		return
@@ -113,7 +113,7 @@ func TestMonitor_Cluster_GetStatus(t *testing.T) {
 		t.Errorf("consume error: %v", err)
 		return
 	}
-	ready, err := monitor.GetReadyCount()
+	_, err = monitor.GetReadyCount()
 	if err != nil {
 		t.Error(err)
 		return
@@ -127,7 +127,7 @@ func TestMonitor_Cluster_GetStatus(t *testing.T) {
 	for i := 0; i < size/2; i++ {
 		_, _ = queue.ready2Unack()
 	}
-	_, err := monitor.GetProcessingCount()
+	_, err = monitor.GetProcessingCount()
 	if err != nil {
 		t.Error(err)
 		return
