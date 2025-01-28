@@ -514,7 +514,6 @@ func (q *DelayQueue) ack(idStr string) error {
 
 func (q *DelayQueue) nack(idStr string) error {
 	atomic.AddInt32(&q.fetchCount, -1)
-	// update retry time as now, unack2Retry will move it to retry immediately
 	err := q.redisCli.ZAdd(q.unAckKey, map[string]float64{
 		idStr: float64(time.Now().Add(q.nackRedeliveryDelay).Unix()),
 	})

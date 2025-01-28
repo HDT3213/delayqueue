@@ -18,9 +18,17 @@ func NewMonitor0(name string, cli RedisCli, opts ...interface{}) *Monitor {
 	}
 }
 
-// NewPublisher creates a new Publisher by a *redis.Client
+// NewMonitor creates a new Monitor by a *redis.Client
 func NewMonitor(name string, cli *redis.Client, opts ...interface{}) *Monitor {
 	rc := &redisV9Wrapper{
+		inner: cli,
+	}
+	return NewMonitor0(name, rc, opts...)
+}
+
+// NewMonitor creates a new Monitor by a *redis.ClusterClient
+func NewMonitorOnCluster(name string, cli *redis.ClusterClient, opts ...interface{}) *Monitor {
+	rc := &redisClusterWrapper{
 		inner: cli,
 	}
 	return NewMonitor0(name, rc, opts...)
