@@ -91,6 +91,7 @@ type Logger interface {
 }
 
 type hashTagKeyOpt int
+type prefixOpt string
 
 // CallbackFunc receives and consumes messages
 // returns true to confirm successfully consumed, false to re-deliver this message
@@ -104,6 +105,11 @@ func UseHashTagKey() interface{} {
 	return hashTagKeyOpt(1)
 }
 
+// UseCustomPrefix customize prefix to instead of default prefix "dp"
+func UseCustomPrefix(prefix string) interface{} {
+	return prefixOpt(prefix)
+}
+
 // NewQueue0 creates a new queue, use DelayQueue.StartConsume to consume or DelayQueue.SendScheduleMsg to publish message
 // callback returns true to confirm successful consumption. If callback returns false or not return within maxConsumeDuration, DelayQueue will re-deliver this message
 func NewQueue0(name string, cli RedisCli, opts ...interface{}) *DelayQueue {
@@ -113,22 +119,23 @@ func NewQueue0(name string, cli RedisCli, opts ...interface{}) *DelayQueue {
 	if cli == nil {
 		panic("cli is required")
 	}
+	prefix := "dp"
 	useHashTag := false
 	var callback CallbackFunc = nil
 	for _, opt := range opts {
 		switch o := opt.(type) {
 		case hashTagKeyOpt:
 			useHashTag = true
+		case prefixOpt:
+			prefix = string(o)
 		case CallbackFunc:
 			callback = o
 		}
 	}
-	var keyPrefix string
+	keyPrefix := prefix + ":" + name
 	if useHashTag {
-		keyPrefix = "{dp:" + name + "}"
-	} else {
-		keyPrefix = "dp:" + name
-	}
+		keyPrefix = "{" + keyPrefix + "}"
+	} 
 	return &DelayQueue{
 		name:               name,
 		redisCli:           cli,

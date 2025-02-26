@@ -226,6 +226,14 @@ WithScriptPreload(true) 会让 delayqueue 预上传脚本并使用 EvalSha 命�
 
 ScriptPreload 默认值为 true.
 
+### 自定义前缀
+
+```go
+queue := delayqueue.NewQueue("example", redisCli, callback, UseCustomPrefix("MyPrefix"))
+```
+
+delayqueue 中所有的 key 都有相同的前缀，默认情况下前缀为 `dp`。如果你需要自定义前缀可以使用 UseCustomPrefix 函数。
+
 ## 监控
 
 我们提供了 `Monitor` 来监控运行数据:

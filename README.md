@@ -235,6 +235,15 @@ But if consumption exceeded deadline, the message will be redelivered immediatel
 
 WithScriptPreload(true) makes DelayQueue preload scripts and call them using EvalSha to reduce communication costs. WithScriptPreload(false) makes DelayQueue run scripts by Eval commnand. Using preload and EvalSha by Default
 
+### Customize Prefix
+
+```go
+queue := delayqueue.NewQueue("example", redisCli, callback, UseCustomPrefix("MyPrefix"))
+```
+
+All keys of delayqueue has a smae prefix, `dp` by default. If you want to modify the prefix, you could use `UseCustomPrefix`. 
+
+
 ## Monitoring
 
 We provides Monitor to monitor the running status.

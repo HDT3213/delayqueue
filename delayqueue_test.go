@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -476,5 +477,34 @@ func TestDelayQueue_TryIntercept(t *testing.T) {
 	}
 	if len(ids) > 0 {
 		t.Error("expect empty messages")
+	}
+}
+
+func TestUseCustomPrefix(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	cb := func(s string) bool {
+		return false
+	}
+	prefix := "MYQUEUE"
+	dp := NewQueue("test", redisCli, cb, UseCustomPrefix(prefix))
+	if !strings.HasPrefix(dp.pendingKey, prefix) {
+		t.Error("wrong prefix")
+	}
+	if !strings.HasPrefix(dp.readyKey, prefix) {
+		t.Error("wrong prefix")
+	}
+	if !strings.HasPrefix(dp.unAckKey, prefix) {
+		t.Error("wrong prefix")
+	}
+	if !strings.HasPrefix(dp.retryKey, prefix) {
+		t.Error("wrong prefix")
+	}
+	if !strings.HasPrefix(dp.retryCountKey, prefix) {
+		t.Error("wrong prefix")
+	}
+	if !strings.HasPrefix(dp.garbageKey, prefix) {
+		t.Error("wrong prefix")
 	}
 }
