@@ -764,7 +764,7 @@ func (q *DelayQueue) StartConsume() (done <-chan struct{}) {
 			case <-q.ticker.C:
 				ids, err := q.beforeConsume()
 				if err != nil {
-					log.Printf("consume error: %v", err)
+					q.logger.Printf("consume error: %v", err)
 				}
 				q.goWithRecover(func() {
 					for _, id := range ids {
