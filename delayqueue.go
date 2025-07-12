@@ -473,6 +473,13 @@ func (q *DelayQueue) ready2Unack() (string, error) {
 
 func (q *DelayQueue) retry2Unack() (string, error) {
 	retryTime := time.Now().Add(q.maxConsumeDuration).Unix()
+	// If nackRedeliveryDelay is set, use the later time
+	if q.nackRedeliveryDelay > 0 {
+		nackRetryTime := time.Now().Add(q.nackRedeliveryDelay).Unix()
+		if nackRetryTime > retryTime {
+			retryTime = nackRetryTime
+		}
+	}
 	keys := []string{q.retryKey, q.unAckKey}
 	ret, err := q.eval(ready2UnackScript, keys, []interface{}{retryTime, q.retryKey, q.unAckKey})
 	if err == NilErr {

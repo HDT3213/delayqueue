@@ -399,6 +399,80 @@ func TestDelayQueue_NackRedeliveryDelay(t *testing.T) {
 	}
 }
 
+func TestDelayQueue_NackRedeliveryDelayAfterRestart(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	
+	// First queue instance
+	redeliveryDelay := 2 * time.Second
+	consumeCount := 0
+	cb := func(s string) bool {
+		consumeCount++
+		return false // always nack
+	}
+	
+	queue1 := NewQueue("test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithFetchInterval(time.Millisecond * 50).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(redeliveryDelay)
+	
+	// Send a message
+	err := queue1.SendScheduleMsg("test-msg", time.Now())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Start consuming and let it nack the message
+	done := queue1.StartConsume()
+	time.Sleep(100 * time.Millisecond)
+	
+	// Stop the first queue (simulate restart)
+	queue1.StopConsume()
+	<-done
+	
+	if consumeCount != 1 {
+		t.Errorf("expected consume count 1, got %d", consumeCount)
+		return
+	}
+	
+	// Create a new queue instance (simulate restart)
+	consumeCount2 := 0
+	cb2 := func(s string) bool {
+		consumeCount2++
+		return true
+	}
+	
+	queue2 := NewQueue("test", redisCli, UseHashTagKey()).
+		WithCallback(cb2).
+		WithFetchInterval(time.Millisecond * 50).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(redeliveryDelay)
+	
+	// Start consuming immediately after "restart"
+	done2 := queue2.StartConsume()
+	time.Sleep(100 * time.Millisecond)
+	
+	// Should not consume immediately due to redelivery delay
+	if consumeCount2 != 0 {
+		t.Errorf("message should not be redelivered immediately after restart, got consume count: %d", consumeCount2)
+	}
+	
+	// Wait for redelivery delay
+	time.Sleep(redeliveryDelay)
+	
+	// Now it should be consumed
+	if consumeCount2 != 1 {
+		t.Errorf("message should be redelivered after delay, got consume count: %d", consumeCount2)
+	}
+	
+	queue2.StopConsume()
+	<-done2
+}
+
 func TestDelayQueue_TryIntercept(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr: "127.0.0.1:6379",
