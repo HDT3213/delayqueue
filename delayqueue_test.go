@@ -689,6 +689,377 @@ func TestDelayQueue_RestartScenario_ReproduceBug(t *testing.T) {
 	t.Logf("Expected behavior: Message should not be consumed immediately after restart")
 }
 
+// TestDelayQueue_EdgeCase_NackLongerThanMaxConsume tests critical edge case
+func TestDelayQueue_EdgeCase_NackLongerThanMaxConsume(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	
+	// CRITICAL: nackRedeliveryDelay > maxConsumeDuration
+	maxConsumeDuration := 2 * time.Second
+	nackRedeliveryDelay := 5 * time.Second  // Longer than maxConsumeDuration!
+	
+	t.Logf("=== EDGE CASE: nackRedeliveryDelay (%v) > maxConsumeDuration (%v) ===", 
+		nackRedeliveryDelay, maxConsumeDuration)
+	
+	consumeCount := 0
+	cb := func(s string) bool {
+		consumeCount++
+		t.Logf("Message consumed #%d at %v", consumeCount, time.Now())
+		return false // nack
+	}
+	
+	queue := NewQueue("edge-test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithFetchInterval(time.Millisecond * 50).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	// Send and consume message
+	err := queue.SendScheduleMsg("edge-case-msg", time.Now())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Consume and nack
+	ids, err := queue.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, id := range ids {
+		queue.callback(id)
+	}
+	queue.afterConsume()
+	
+	// Check unAck state before any timeout
+	ctx := context.Background()
+	unackMessages, _ := redisCli.ZRangeWithScores(ctx, queue.unAckKey, 0, -1).Result()
+	if len(unackMessages) != 1 {
+		t.Fatalf("Expected 1 message in unAck, got %d", len(unackMessages))
+	}
+	
+	nackRetryTime := time.Unix(int64(unackMessages[0].Score), 0)
+	now := time.Now()
+	maxConsumeExpireTime := now.Add(maxConsumeDuration)
+	
+	t.Logf("Current time: %v", now)
+	t.Logf("Message nack retry time: %v", nackRetryTime)
+	t.Logf("MaxConsumeDuration would expire at: %v", maxConsumeExpireTime)
+	
+	// CRITICAL TEST: Wait until maxConsumeDuration expires but nackRedeliveryDelay hasn't
+	// This is the window where the bug might manifest
+	waitTime := maxConsumeDuration + 500*time.Millisecond
+	t.Logf("Waiting %v (past maxConsumeDuration but before nackRedeliveryDelay)...", waitTime)
+	time.Sleep(waitTime)
+	
+	// Now check what happens when unack2Retry is called
+	// This simulates what happens during a restart or periodic cleanup
+	currentTime := time.Now()
+	timeUntilNackExpiry := nackRetryTime.Sub(currentTime)
+	
+	t.Logf("After waiting, current time: %v", currentTime)
+	t.Logf("Time until nack expiry: %.2fs", timeUntilNackExpiry.Seconds())
+	
+	// Call unack2Retry manually to see what happens
+	err = queue.unack2Retry()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Check where the message ended up
+	unackCount, _ := redisCli.ZCard(ctx, queue.unAckKey).Result()
+	retryCount, _ := redisCli.LLen(ctx, queue.retryKey).Result()
+	
+	t.Logf("After unack2Retry():")
+	t.Logf("- unAckKey: %d messages", unackCount)
+	t.Logf("- retryKey: %d messages", retryCount)
+	
+	if timeUntilNackExpiry > 0 {
+		// Message should still be in unAck because nackRedeliveryDelay hasn't expired
+		if unackCount != 1 {
+			t.Errorf("🐛 BUG FOUND: Message was moved to retry even though nackRedeliveryDelay hasn't expired!")
+			t.Errorf("Expected message to stay in unAck for %.2fs more", timeUntilNackExpiry.Seconds())
+		} else {
+			t.Log("✅ Correct: Message stayed in unAck as nackRedeliveryDelay hasn't expired")
+		}
+	} else {
+		// Message should be in retry because nackRedeliveryDelay has expired
+		if retryCount != 1 {
+			t.Errorf("Expected message to be moved to retry as nackRedeliveryDelay has expired")
+		} else {
+			t.Log("✅ Correct: Message moved to retry as nackRedeliveryDelay has expired")
+		}
+	}
+}
+
+// TestDelayQueue_CriticalBug_ReproduceIssue16 reproduces the exact bug scenario
+func TestDelayQueue_CriticalBug_ReproduceIssue16(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	
+	t.Log("=== REPRODUCING EXACT ISSUE #16 SCENARIO ===")
+	
+	// Key insight: The bug occurs when retry2Unack processes retry queue
+	// after restart, without considering nackRedeliveryDelay
+	
+	maxConsumeDuration := 3 * time.Second
+	nackRedeliveryDelay := 2 * time.Second  // Shorter than maxConsumeDuration for this test
+	
+	consumeCount := 0
+	cb := func(s string) bool {
+		consumeCount++
+		t.Logf("Message consumed #%d at %v", consumeCount, time.Now())
+		return false // nack
+	}
+	
+	queue1 := NewQueue("bug-test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	// Send and nack message
+	err := queue1.SendScheduleMsg("bug-msg", time.Now())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	ids, err := queue1.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, id := range ids {
+		queue1.callback(id)
+	}
+	queue1.afterConsume()
+	
+	// Force message to retry queue by calling unack2Retry after nackRedeliveryDelay
+	t.Logf("Waiting for nackRedeliveryDelay (%v) to expire...", nackRedeliveryDelay)
+	time.Sleep(nackRedeliveryDelay + 100*time.Millisecond)
+	
+	err = queue1.unack2Retry()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Verify message is now in retry queue
+	ctx := context.Background()
+	retryCount, _ := redisCli.LLen(ctx, queue1.retryKey).Result()
+	if retryCount != 1 {
+		t.Fatalf("Expected 1 message in retry queue, got %d", retryCount)
+	}
+	t.Log("✅ Message successfully moved to retry queue")
+	
+	// NOW THE CRITICAL PART: Simulate restart by creating new queue instance
+	// The bug is in retry2Unack() - it should respect nackRedeliveryDelay
+	// when moving messages from retry back to unack
+	
+	restartTime := time.Now()
+	consumeCount2 := 0
+	cb2 := func(s string) bool {
+		consumeCount2++
+		consumeTime := time.Now()
+		timeSinceRestart := consumeTime.Sub(restartTime)
+		t.Logf("RESTART: Message consumed #%d at %v (%.2fs after restart)", 
+			consumeCount2, consumeTime, timeSinceRestart.Seconds())
+		
+		// This is where the bug manifests: message consumed too early
+		if timeSinceRestart < nackRedeliveryDelay {
+			t.Errorf("🐛 BUG REPRODUCED: Message consumed %.2fs after restart, violates nackRedeliveryDelay (%.2fs)", 
+				timeSinceRestart.Seconds(), nackRedeliveryDelay.Seconds())
+		}
+		
+		return true
+	}
+	
+	queue2 := NewQueue("bug-test", redisCli, UseHashTagKey()).
+		WithCallback(cb2).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	t.Logf("RESTART: New queue instance created at %v", restartTime)
+	
+	// The bug: retry2Unack uses maxConsumeDuration instead of nackRedeliveryDelay
+	// when setting retry time for messages from retry queue
+	
+	// Try to consume - this should trigger retry2Unack internally
+	ids, err = queue2.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	t.Logf("RESTART: beforeConsume() returned %d messages", len(ids))
+	
+	if len(ids) > 0 {
+		for _, id := range ids {
+			queue2.callback(id)
+		}
+		queue2.afterConsume()
+	}
+	
+	t.Logf("=== RESULT ===")
+	t.Logf("Consume count after restart: %d", consumeCount2)
+	
+	if consumeCount2 > 0 {
+		t.Log("Message was consumed immediately after restart - checking if this violates nackRedeliveryDelay...")
+	} else {
+		t.Log("Message was not consumed immediately after restart")
+	}
+}
+
+// TestDelayQueue_TrueRestartScenario tests the real issue scenario
+func TestDelayQueue_TrueRestartScenario(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr:     "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	
+	t.Log("=== TRUE RESTART SCENARIO - The Real Issue #16 ===")
+	
+	// The real issue: message is nacked, then service restarts BEFORE
+	// nackRedeliveryDelay expires, causing immediate consumption
+	
+	nackRedeliveryDelay := 5 * time.Second  // Long delay
+	maxConsumeDuration := 2 * time.Second
+	
+	consumeCount := 0
+	cb := func(s string) bool {
+		consumeCount++
+		t.Logf("Message consumed #%d at %v", consumeCount, time.Now())
+		return false // nack
+	}
+	
+	queue1 := NewQueue("true-test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	// Send and nack message
+	err := queue1.SendScheduleMsg("true-bug-msg", time.Now())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Consume and nack
+	nackTime := time.Now()
+	ids, err := queue1.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, id := range ids {
+		queue1.callback(id)
+	}
+	queue1.afterConsume()
+	
+	t.Logf("Message nacked at %v, should not be available until %v", 
+		nackTime, nackTime.Add(nackRedeliveryDelay))
+	
+	// Check message is in unAck with future retry time
+	ctx := context.Background()
+	unackMessages, _ := redisCli.ZRangeWithScores(ctx, queue1.unAckKey, 0, -1).Result()
+	if len(unackMessages) != 1 {
+		t.Fatalf("Expected 1 message in unAck, got %d", len(unackMessages))
+	}
+	
+	expectedRetryTime := time.Unix(int64(unackMessages[0].Score), 0)
+	t.Logf("Message in unAck with retry time: %v", expectedRetryTime)
+	
+	// CRITICAL: Restart BEFORE nackRedeliveryDelay expires
+	// Wait only a short time (much less than nackRedeliveryDelay)
+	shortWait := 500 * time.Millisecond
+	t.Logf("Waiting only %v before restart (much less than %v delay)...", 
+		shortWait, nackRedeliveryDelay)
+	time.Sleep(shortWait)
+	
+	// Restart simulation
+	restartTime := time.Now()
+	timeUntilShouldRetry := expectedRetryTime.Sub(restartTime)
+	
+	t.Logf("RESTART at %v", restartTime)
+	t.Logf("Message should not be available for %.2fs more", timeUntilShouldRetry.Seconds())
+	
+	consumeCount2 := 0
+	cb2 := func(s string) bool {
+		consumeCount2++
+		consumeTime := time.Now()
+		timeSinceRestart := consumeTime.Sub(restartTime)
+		actualDelay := consumeTime.Sub(nackTime)
+		
+		t.Logf("RESTART: Message consumed #%d at %v", consumeCount2, consumeTime)
+		t.Logf("RESTART: %.2fs after restart, %.2fs after original nack", 
+			timeSinceRestart.Seconds(), actualDelay.Seconds())
+		
+		if actualDelay < nackRedeliveryDelay {
+			t.Errorf("🐛 BUG CONFIRMED: Message consumed %.2fs after nack, should wait %.2fs", 
+				actualDelay.Seconds(), nackRedeliveryDelay.Seconds())
+		} else {
+			t.Logf("✅ Correct: Message waited %.2fs as expected", actualDelay.Seconds())
+		}
+		
+		return true
+	}
+	
+	queue2 := NewQueue("true-test", redisCli, UseHashTagKey()).
+		WithCallback(cb2).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	// Try to consume immediately after restart
+	ids, err = queue2.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	t.Logf("RESTART: beforeConsume() returned %d messages immediately", len(ids))
+	
+	if len(ids) > 0 {
+		for _, id := range ids {
+			queue2.callback(id)
+		}
+		queue2.afterConsume()
+	} else {
+		// If no immediate consumption, wait and try again
+		t.Log("No immediate consumption, waiting for proper delay...")
+		
+		// Wait until the message should be available
+		if timeUntilShouldRetry > 0 {
+			time.Sleep(timeUntilShouldRetry + 100*time.Millisecond)
+			
+			ids, err = queue2.beforeConsume()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			
+			t.Logf("After waiting, beforeConsume() returned %d messages", len(ids))
+			
+			if len(ids) > 0 {
+				for _, id := range ids {
+					queue2.callback(id)
+				}
+				queue2.afterConsume()
+			}
+		}
+	}
+}
+
 // TestDelayQueue_NackRedeliveryDelay_VerifyFix tests the actual fix with simplified scenario
 func TestDelayQueue_NackRedeliveryDelay_VerifyFix(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
