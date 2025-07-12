@@ -347,7 +347,6 @@ func TestDelayQueue_FetchLimit(t *testing.T) {
 func TestDelayQueue_NackRedeliveryDelay(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379",
-		Password: "FZwQ6fTp3SJvsDdNM79YmEWaU52CuxB4",
 	})
 	redisCli.FlushDB(context.Background())
 	cb := func(s string) bool {
@@ -403,7 +402,6 @@ func TestDelayQueue_NackRedeliveryDelay(t *testing.T) {
 func TestDelayQueue_NackRedeliveryDelayAfterRestart_ReproduceBug(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379",
-		Password: "FZwQ6fTp3SJvsDdNM79YmEWaU52CuxB4",
 	})
 	redisCli.FlushDB(context.Background())
 
@@ -494,7 +492,6 @@ func TestDelayQueue_NackRedeliveryDelayAfterRestart_ReproduceBug(t *testing.T) {
 func TestDelayQueue_NackRedeliveryDelay_VerifyFix(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379",
-		Password: "FZwQ6fTp3SJvsDdNM79YmEWaU52CuxB4",
 	})
 	redisCli.FlushDB(context.Background())
 	
