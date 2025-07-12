@@ -399,6 +399,147 @@ func TestDelayQueue_NackRedeliveryDelay(t *testing.T) {
 	}
 }
 
+// TestDelayQueue_Issue16_RestartScenario reproduces and verifies the fix for Issue #16
+func TestDelayQueue_Issue16_RestartScenario(t *testing.T) {
+	redisCli := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:6379",
+	})
+	redisCli.FlushDB(context.Background())
+	
+	t.Log("=== Issue #16: nackRedeliveryDelay not respected after restart ===")
+	
+	// Test scenario: message is nacked, then service restarts before
+	// nackRedeliveryDelay expires, causing immediate consumption
+	
+	nackRedeliveryDelay := 3 * time.Second
+	maxConsumeDuration := 2 * time.Second
+	
+	consumeCount := 0
+	cb := func(s string) bool {
+		consumeCount++
+		t.Logf("Message consumed #%d at %v", consumeCount, time.Now())
+		return false // nack
+	}
+	
+	queue1 := NewQueue("issue16-test", redisCli, UseHashTagKey()).
+		WithCallback(cb).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	// Send and nack message
+	err := queue1.SendScheduleMsg("issue16-msg", time.Now())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Consume and nack
+	nackTime := time.Now()
+	ids, err := queue1.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for _, id := range ids {
+		queue1.callback(id)
+	}
+	queue1.afterConsume()
+	
+	t.Logf("Message nacked at %v, should not be available until %v", 
+		nackTime, nackTime.Add(nackRedeliveryDelay))
+	
+	// Force message to retry queue by waiting for nackRedeliveryDelay
+	t.Logf("Waiting for nackRedeliveryDelay (%v) to expire...", nackRedeliveryDelay)
+	time.Sleep(nackRedeliveryDelay + 100*time.Millisecond)
+	
+	err = queue1.unack2Retry()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	// Verify message is now in retry queue (this is the key state for the bug)
+	ctx := context.Background()
+	retryCount, _ := redisCli.LLen(ctx, queue1.retryKey).Result()
+	if retryCount != 1 {
+		t.Fatalf("Expected 1 message in retry queue, got %d", retryCount)
+	}
+	t.Log("✅ Message successfully moved to retry queue")
+	
+	// CRITICAL: Simulate restart by creating new queue instance
+	// The bug was that retry2Unack() didn't respect nackRedeliveryDelay
+	restartTime := time.Now()
+	consumeCount2 := 0
+	cb2 := func(s string) bool {
+		consumeCount2++
+		consumeTime := time.Now()
+		timeSinceRestart := consumeTime.Sub(restartTime)
+		actualDelay := consumeTime.Sub(nackTime)
+		
+		t.Logf("RESTART: Message consumed #%d at %v", consumeCount2, consumeTime)
+		t.Logf("RESTART: %.2fs after restart, %.2fs after original nack", 
+			timeSinceRestart.Seconds(), actualDelay.Seconds())
+		
+		// With the fix, message should wait for nackRedeliveryDelay from restart time
+		expectedMinDelay := nackRedeliveryDelay
+		if timeSinceRestart < expectedMinDelay {
+			t.Errorf("❌ Message consumed too early: %.2fs after restart, should wait at least %.2fs", 
+				timeSinceRestart.Seconds(), expectedMinDelay.Seconds())
+		} else {
+			t.Logf("✅ Fix verified: Message waited %.2fs after restart", timeSinceRestart.Seconds())
+		}
+		
+		return true
+	}
+	
+	queue2 := NewQueue("issue16-test", redisCli, UseHashTagKey()).
+		WithCallback(cb2).
+		WithMaxConsumeDuration(maxConsumeDuration).
+		WithDefaultRetryCount(3).
+		WithNackRedeliveryDelay(nackRedeliveryDelay)
+	
+	t.Logf("RESTART: New queue instance created at %v", restartTime)
+	
+	// Try to consume immediately after restart
+	ids, err = queue2.beforeConsume()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	
+	t.Logf("RESTART: beforeConsume() returned %d messages immediately", len(ids))
+	
+	if len(ids) > 0 {
+		// This would be the bug - immediate consumption
+		for _, id := range ids {
+			queue2.callback(id)
+		}
+		queue2.afterConsume()
+	} else {
+		// If no immediate consumption, wait for proper delay
+		t.Log("No immediate consumption, waiting for nackRedeliveryDelay...")
+		time.Sleep(nackRedeliveryDelay + 100*time.Millisecond)
+		
+		ids, err = queue2.beforeConsume()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		
+		if len(ids) > 0 {
+			for _, id := range ids {
+				queue2.callback(id)
+			}
+			queue2.afterConsume()
+		}
+	}
+	
+	if consumeCount2 == 0 {
+		t.Error("Message was never consumed by the second queue")
+	}
+}
+
 func TestDelayQueue_TryIntercept(t *testing.T) {
 	redisCli := redis.NewClient(&redis.Options{
 		Addr: "127.0.0.1:6379",
